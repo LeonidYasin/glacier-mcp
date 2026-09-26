@@ -1,0 +1,23 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: system-ui, sans-serif;
+}
+
+#map {
+  position: absolute;
+  inset: 0 0 32px 0;
+  background: #111;
+}
+
+#status {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 32px;
+  line-height: 32px;
+  padding: 0 12px;
+  background: #1e1e1e;
+  color: #ddd;
+  font-size: 13px;
+}
