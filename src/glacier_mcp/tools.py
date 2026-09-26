@@ -1,20 +1,35 @@
-"""MCP tool definitions.
+"""Public API for the MCP tools.
 
-Each function here is registered on the MCP server in ``server.py``.
-
-Planned tools:
-  * get_polygon()        -> GeoJSON
-  * get_vertices()       -> list[{index, x, y}]
-  * move_vertex(index, dx, dy)
-  * add_vertex(index, coords)
-  * delete_vertex(index)
-  * translate_polygon(dx, dy)
-  * smooth_polygon(tolerance)
-  * undo()
-  * redo()
-  * export_shapefile(path)
-
-Placeholder - to be implemented.
+The tool functions themselves live in :mod:`glacier_mcp.server`, where
+they are registered on the FastMCP instance. This module re-exports them
+so they can be imported without touching the server module (and so tests
+that do not want to spin up the HTTP transport can call them directly).
 """
 
 from __future__ import annotations
+
+from .server import (
+    add_vertex,
+    delete_vertex,
+    get_polygon,
+    get_state,
+    get_vertices,
+    move_vertex,
+    redo,
+    smooth_polygon,
+    translate_polygon,
+    undo,
+)
+
+__all__ = [
+    "add_vertex",
+    "delete_vertex",
+    "get_polygon",
+    "get_state",
+    "get_vertices",
+    "move_vertex",
+    "redo",
+    "smooth_polygon",
+    "translate_polygon",
+    "undo",
+]
