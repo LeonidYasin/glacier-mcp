@@ -27,6 +27,8 @@ Two ports, one process:
 - `http://localhost:8765` - interactive map (open in browser)
 - `http://localhost:8766` - MCP endpoint (connect your MCP client here)
 
+Both share one `PolygonState` instance, so a vertex moved by the agent appears in the browser and vice versa.
+
 ## Quick start
 
 ```bash
@@ -37,29 +39,14 @@ python -m glacier_mcp
 Then:
 
 1. Open http://localhost:8765
-2. Draw a polygon around a glacier with the mouse (GeoTIFF basemap is a follow-up; the map uses an OSM placeholder for now)
-3. Connect your MCP client (Claude Desktop / Cursor / DeepSeek++ / etc.) to http://localhost:8766
-4. Ask the agent: *"move the western boundary 50 meters east"*
+2. Draw a polygon with the mouse (OpenLayers Draw interaction)
+3. Drag a vertex (OpenLayers Modify interaction)
+4. Connect your MCP client (Claude Desktop / Cursor / DeepSeek++ / etc.) to http://localhost:8766
+5. Ask the agent: *"move the western boundary 50 meters east"*
 
-## Python API
-
-```python
-from glacier_mcp import io as gio
-from shapely.geometry import Polygon
-
-raster = gio.load_geotiff("arctic_dem_58_22.tif")
-print(raster.crs, raster.shape)
-
-poly = Polygon([(500_000, 5_000_000), (500_100, 5_000_000), (500_100, 4_999_900)])
-written = gio.export_shapefile(poly, raster.crs, "out/", name="glacier")
-print("wrote:", [p.name for p in written])
-```
-
-The exported shapefile always carries a `.prj` derived from `raster.crs`. Export in EPSG:4326 (lat/lon) is refused — reproject to a metric CRS first.
+The polygon in the browser updates as the agent edits.
 
 ## MCP tools
-
-All tools operate on the single in-memory polygon. Coordinates are in the CRS of the loaded GeoTIFF.
 
 | Tool                 | What it does                                     |
 |----------------------|--------------------------------------------------|
@@ -71,12 +58,15 @@ All tools operate on the single in-memory polygon. Coordinates are in the CRS of
 | `translate_polygon`  | Move the whole polygon by (dx, dy)               |
 | `smooth_polygon`     | Apply smoothing to the boundary                  |
 | `undo` / `redo`      | Step through the edit history                    |
-
-`export_shapefile` is exposed as a Python API for now; wiring it as an MCP tool is a follow-up (needs a decision on where the server is allowed to write files).
+| `export_shapefile`   | Save to `.shp` + `.shx` + `.dbf` + `.prj` + `.cpg` (commit 5) |
 
 ## Status
 
-Working skeleton. All geometry operations are unit-tested, the MCP server runs, and the OpenLayers UI is wired to the same `PolygonState` via WebSocket. GeoTIFF basemap loading in the UI is next.
+- [x] Commit 1: skeleton, README, LICENSE, pyproject, CI
+- [x] Commit 2: geometry + state (shapely, undo/redo)
+- [x] Commit 3: MCP server with 9 tools
+- [x] Commit 4: FastAPI map server + WebSocket bridge + OpenLayers UI
+- [ ] Commit 5: GeoTIFF loading, shapefile export with `.prj`
 
 ## License
 
