@@ -37,12 +37,29 @@ python -m glacier_mcp
 Then:
 
 1. Open http://localhost:8765
-2. Load your GeoTIFF (satellite image of a glacier)
-3. Draw a polygon around the glacier with the mouse
-4. Connect your MCP client (Claude Desktop / Cursor / DeepSeek++ / etc.) to http://localhost:8766
-5. Ask the agent: *"move the western boundary 50 meters east"*
+2. Draw a polygon around a glacier with the mouse (GeoTIFF basemap is a follow-up; the map uses an OSM placeholder for now)
+3. Connect your MCP client (Claude Desktop / Cursor / DeepSeek++ / etc.) to http://localhost:8766
+4. Ask the agent: *"move the western boundary 50 meters east"*
+
+## Python API
+
+```python
+from glacier_mcp import io as gio
+from shapely.geometry import Polygon
+
+raster = gio.load_geotiff("arctic_dem_58_22.tif")
+print(raster.crs, raster.shape)
+
+poly = Polygon([(500_000, 5_000_000), (500_100, 5_000_000), (500_100, 4_999_900)])
+written = gio.export_shapefile(poly, raster.crs, "out/", name="glacier")
+print("wrote:", [p.name for p in written])
+```
+
+The exported shapefile always carries a `.prj` derived from `raster.crs`. Export in EPSG:4326 (lat/lon) is refused — reproject to a metric CRS first.
 
 ## MCP tools
+
+All tools operate on the single in-memory polygon. Coordinates are in the CRS of the loaded GeoTIFF.
 
 | Tool                 | What it does                                     |
 |----------------------|--------------------------------------------------|
@@ -54,11 +71,12 @@ Then:
 | `translate_polygon`  | Move the whole polygon by (dx, dy)               |
 | `smooth_polygon`     | Apply smoothing to the boundary                  |
 | `undo` / `redo`      | Step through the edit history                    |
-| `export_shapefile`   | Save to `.shp` + `.shx` + `.dbf` + `.prj` + `.cpg` |
+
+`export_shapefile` is exposed as a Python API for now; wiring it as an MCP tool is a follow-up (needs a decision on where the server is allowed to write files).
 
 ## Status
 
-Early skeleton. See `docs/architecture.md` and `docs/mcp-tools.md`.
+Working skeleton. All geometry operations are unit-tested, the MCP server runs, and the OpenLayers UI is wired to the same `PolygonState` via WebSocket. GeoTIFF basemap loading in the UI is next.
 
 ## License
 
