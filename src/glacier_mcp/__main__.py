@@ -1,18 +1,29 @@
 """Entry point: ``python -m glacier_mcp``.
 
-Starts two servers in one process:
-  * HTTP + WebSocket UI on http://localhost:8765 (OpenLayers map)
-  * MCP streamable-http endpoint on http://localhost:8766 (for the agent)
+Commit 3 wires only the MCP side (port 8766). The OpenLayers map UI
+(port 8765) lands in commit 4; until then this entry point prints a
+short note and runs the MCP server.
 """
 
 from __future__ import annotations
 
+import sys
+
+from . import __version__
+from .server import run as run_mcp
+
 
 def main() -> None:
-    raise SystemExit(
-        "glacier-mcp is not implemented yet. "
-        "See README.md and docs/architecture.md for the plan."
+    if "--version" in sys.argv:
+        print(f"glacier-mcp {__version__}")
+        return
+
+    print(
+        f"glacier-mcp {__version__}\n"
+        "MCP streamable-http: http://127.0.0.1:8766\n"
+        "Map UI: not implemented yet (commit 4)\n"
     )
+    run_mcp()
 
 
 if __name__ == "__main__":
