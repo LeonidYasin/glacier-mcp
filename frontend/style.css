@@ -536,19 +536,18 @@ body {
 .ol-scale-line {
   background: rgba(0, 0, 0, 0.65);
   /*
-   * Default position: centred horizontally, sitting flush on top of the
-   * 44px-tall `#polygon-panel` (see `#map { inset: 40px 0 44px 0; }`).
-   * `left: 50%` + `translateX(-50%)` centres it without knowing its own
-   * width. 46px = 44px panel + 2px gap, so the bar hugs the status bar
-   * rather than floating above it.
+   * Default position: centred horizontally, sitting just above the 44px
+   * `#polygon-panel` (see `#map { inset: 40px 0 44px 0; }`). 28px keeps
+   * the bar visually close to the status bar without overlapping it.
    *
-   * The bar is draggable (see `makeScaleLineDraggable` in main.js): the
-   * user can pick it up and slide it next to a feature to read off a
-   * linear size. The inline `left`/`bottom` styles that the drag handler
-   * writes override these defaults; reloading the page drops the inline
-   * styles and the bar snaps back to this bottom-centre default.
+   * `pointer-events: auto` is REQUIRED for dragging: OL places its controls
+   * inside `.ol-overlaycontainer-stopevent`, whose parent has
+   * `pointer-events: none` so that map panning works through the overlay
+   * layer. Without an explicit `auto` here, our pointerdown/pointermove
+   * handlers never receive events and the bar refuses to move — that was
+   * the root cause of the "linear doesn't drag" report.
    */
-  bottom: 46px;
+  bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
   padding: 2px 8px;
@@ -557,6 +556,7 @@ body {
   cursor: move;
   user-select: none;
   touch-action: none;
+  pointer-events: auto;
 }
 
 /* While the user is actively dragging the scale bar, drop the centring
