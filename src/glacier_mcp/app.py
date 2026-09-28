@@ -791,11 +791,11 @@ def gee_auth_callback(
 
     session_id = request.cookies.get("glacier_session") or secrets.token_urlsafe(24)
     _gee_sessions[session_id] = user
-    # Warm up Earth Engine now so the very first MCP call is not slow.
-    try:
-        gee.init_ee(user)
-    except Exception:  # noqa: BLE001 — surfaced later via MCP tool errors
-        pass
+    # MCP tools run over a different transport and cannot read this session
+    # cookie, so we also record the user as globally "active" — for a
+    # single-user localhost app the last person to complete OAuth *is* the
+    # active user. set_active_user() also runs ee.Initialize for us.
+    gee.set_active_user(user)
 
     response = RedirectResponse(url="/")
     response.set_cookie(
