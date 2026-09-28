@@ -1396,6 +1396,91 @@ function _nextLayerZ() {
   return LAYER_Z_FLOOR + layerRegistry.size;
 }
 
+// ---- Server sync ----------------------------------------------------------
+//
+// The layer registry lives on the SERVER (see glacier_mcp/layers.py). This
+// browser is a thin renderer: it wraps each layer in an ol object, but every
+// mutation is sent to the server first, and the resulting `layers_state`
+// broadcast is what actually updates the panel. That keeps the agent's MCP
+// tools and the manual panel in lockstep across tabs.
+
+// Ask the server to mutate a layer. `method`/`patch` describe the change;
+// on failure we fall back to a full resync so the UI never lies.
+async function mutateLayerOnServer(method, path, body) {
+  try {
+    const r = await fetch(path, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      console.warn("layer mutation failed", method, path, data);
+    }
+  } catch (err) {
+    console.warn("layer mutation error", method, path, err);
+  }
+}
+
+// Reconcile the local ol registry with the server's authoritative list.
+// Existing layers are kept (their tiles are not thrown away); layers the
+// server no longer lists are removed; new server layers are created.
+function applyLayersStateFromServer(layers) {
+  const seen = new Set();
+  for (const entry of layers) {
+    const id = entry.id;
+    seen.add(id);
+    const existing = layerRegistry.get(id);
+    if (existing) {
+      if (Number.isFinite(entry.opacity)) {
+        existing.opacity = Math.max(0, Math.min(1, entry.opacity));
+        existing.layer.setOpacity(existing.opacity);
+      }
+      if (typeof entry.visible === "boolean") {
+        existing.visible = entry.visible;
+        existing.layer.setVisible(entry.visible);
+      }
+      if (entry.name) existing.name = entry.name;
+      continue;
+    }
+    // A layer we do not have yet — build the ol object from the URL.
+    if (!entry.url) continue;
+    let layer = null;
+    try {
+      const source = new ol.source.XYZ({
+        url: entry.url,
+        crossOrigin: "anonymous",
+        attributions: entry.kind === "gee" ? "Sentinel-2 · Google Earth Engine" : undefined,
+      });
+      layer = new ol.layer.Tile({ source });
+    } catch (err) {
+      console.warn("cannot build layer from server state", id, err);
+      continue;
+    }
+    const record = {
+      layer,
+      kind: entry.kind || "xyz",
+      name: entry.name || id,
+      url: entry.url,
+      visible: entry.visible !== false,
+      opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+    };
+    layer.setOpacity(record.opacity);
+    layer.setVisible(record.visible);
+    layerRegistry.set(id, record);
+    map.addLayer(layer);
+  }
+  // Drop anything the server no longer knows about.
+  for (const [id, rec] of Array.from(layerRegistry.entries())) {
+    if (!seen.has(id)) {
+      map.removeLayer(rec.layer);
+      layerRegistry.delete(id);
+    }
+  }
+  reflowLayerZ();
+  renderLayerPanel();
+}
+
 function addLayer(id, layer, meta) {
   // Replace by id: re-adding the same key updates in place.
   removeLayer(id, { silent: true });
@@ -1413,6 +1498,21 @@ function addLayer(id, layer, meta) {
   map.addLayer(layer);
   reflowLayerZ();
   renderLayerPanel();
+  // Tell the server this layer exists. GeoTIFFs are tiled client-side, so
+  // the server learns about them only through this registration.
+  if (ws && ws.readyState === WebSocket.OPEN && meta.register !== false) {
+    ws.send(
+      JSON.stringify({
+        type: "layer_register",
+        id,
+        kind: record.kind,
+        name: record.name,
+        url: record.url,
+        opacity: record.opacity,
+        visible: record.visible,
+      })
+    );
+  }
   return record;
 }
 
