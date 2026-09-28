@@ -24,7 +24,7 @@ body {
   overflow: hidden;
 }
 
-#toolbar .btn {
+.btn, #toolbar .btn {
   /* Do not grow, do not shrink: fixed-size control. */
   flex: 0 0 auto;
   display: inline-block;
