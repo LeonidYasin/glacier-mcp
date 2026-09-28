@@ -36,22 +36,6 @@ _state = PolygonState()
 # exactly what we need.
 #
 # We deliberately allow-list the SPECIFIC extension ID rather than
-# DNS-rebinding protection is ON by default in the MCP Python SDK, and it
-# checks BOTH the `Host` and `Origin` headers of every request. Either one
-# being outside the corresponding allow-list produces a 4xx (403 for a bad
-# Origin, 421 Misdirected Request for a bad Host).
-#
-# Defaults only cover a localhost host WITHOUT our custom ports, and only
-# localhost origins. That breaks two real clients of this server:
-#   * the MCP Streamable HTTP client at http://127.0.0.1:8766/mcp sends
-#     `Host: 127.0.0.1:8766`, which the default `allowed_hosts` rejects;
-#   * the DeepSeek++ Chrome extension sends
-#     `Origin: chrome-extension://<id>`, which the default `allowed_origins`
-#     rejects.
-# We keep the protection enabled and just widen both allow-lists to cover
-# exactly what we need.
-#
-# We deliberately allow-list the SPECIFIC extension ID rather than
 # `chrome-extension://*`: a wildcard would let any Chrome extension the user
 # happens to install reach this server.
 _MCP_ALLOWED_HOSTS = [
