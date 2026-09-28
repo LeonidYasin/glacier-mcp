@@ -268,6 +268,16 @@ async def _broadcast_state() -> None:
     )
 
 
+def save_capture(full_b64: str) -> Path:
+    """Decode a base64 PNG from the browser and write it under captures/.
+
+    Returns the path so the MCP tool can report it back to the agent.
+    """
+    path = CAPTURES_DIR / f"{uuid.uuid4().hex}.png"
+    path.write_bytes(base64.b64decode(full_b64))
+    return path
+
+
 # ---- HTTP endpoints -------------------------------------------------------
 
 
