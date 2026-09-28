@@ -178,7 +178,7 @@ async def add_or_replace_polygon(payload: dict) -> JSONResponse:
             state.replace_at(int(payload["index"]), geom)
         else:
             state.add_polygon(geom, name=payload.get("name"))
-    except Exception as exc:  # noqa: BLE001 - surface as HTTP 400
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     await _broadcast_state()
