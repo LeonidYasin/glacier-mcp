@@ -432,9 +432,6 @@ def render_viewport_png(
         col_end = int(round(max(col_f0, col_f1)))
         row_end = int(round(max(row_f0, row_f1)))
 
-        win_w = max(1, col_end - col_off)
-        win_h = max(1, row_end - row_off)
-
         # Clamp to raster bounds. If the requested bbox is entirely outside
         # the raster, return a fully transparent PNG of the requested size.
         if col_off >= raster_w or row_off >= raster_h or col_end <= 0 or row_end <= 0:
