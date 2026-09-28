@@ -337,16 +337,39 @@ def render_tile_png(
     # content_w/content_h can come out as 0. Paste a single transparent pixel
     # and skip — the tile is effectively empty.
     if content_w > 0 and content_h > 0:
-        # NEAREST is the right resampling here, not BILINEAR. Each tile is
-    # cut independently, so bilinear interpolation along a tile edge has
-    # no neighbour pixels from the adjacent tile to blend with — the two
-    # tiles end up slightly different colours at the shared border, which
-    # shows up as a visible grid of seams when the user zooms in. NEAREST
-    # just picks the closest source pixel, and adjacent tiles pick the
-    # SAME pixel on the shared edge, so the seams disappear. It also
-    # matches what desktop GIS (QGIS, ArcGIS) shows when you zoom past
-    # the raster's native resolution.
-    cropped = img.resize((content_w, content_h), Image.NEAREST)
+        # There are two distinct regimes here, and they MUST be handled
+        # differently — otherwise the user sees "blurry squares" at every
+        # zoom level.
+        #
+        #   (A) read_w >= content_w  ->  the tile holds MORE raster pixels
+        #       than it has screen pixels to fill. This is the case at
+        #       resolutions >= the raster's native pixel size (e.g. 10 m
+        #       for Sentinel-2). We just CROP — no resizing at all — so
+        #       one raster pixel maps to at most one screen pixel and no
+        #       blur/squares are introduced.
+        #
+        #   (B) read_w < content_w  ->  the tile holds FEWER raster
+        #       pixels than screen pixels. This happens only when zooming
+        #       past the raster's native resolution. We resize with
+        #       NEAREST so each raster pixel becomes an NxN block of one
+        #       solid colour — exactly what QGIS/ArcGIS show.
+        #
+        # NEAREST is used (not BILINEAR) because bilinear would smear the
+        # edge pixels, and different tiles would then compute slightly
+        # different edge colours (no shared context).
+        if read_w >= content_w and read_h >= content_h:
+            # Regime A: downsample by plain cropping — no resize.
+            # Take a content_w x content_h sub-window from the centre of
+            # the read window so the crop is symmetric and does not
+            # introduce a half-pixel shift.
+            off_x = max(0, (read_w - content_w) // 2)
+            off_y = max(0, (read_h - content_h) // 2)
+            cropped = img.crop(
+                (off_x, off_y, off_x + content_w, off_y + content_h)
+            )
+        else:
+            # Regime B: upscale with nearest-neighbour — pixelated look.
+            cropped = img.resize((content_w, content_h), Image.NEAREST)
         canvas.paste(cropped, (paste_x, paste_y))
 
     buf = stdlib_io.BytesIO()
