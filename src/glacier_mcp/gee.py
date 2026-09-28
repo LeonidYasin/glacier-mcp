@@ -456,3 +456,224 @@ def rgb_thumbnail_url(
             "visParams": vis,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Interactive basemap (XYZ tile URL for OpenLayers / Leaflet)
+# ---------------------------------------------------------------------------
+
+#: Named visualisation presets. Each value is a ``vis_params`` dict suitable
+#: for ``Image.getMapId``:
+#:   bands   — list of band names, in the order (R, G, B) or single band
+#:   min/max — stretch bounds (scalar or per-band list)
+#:   gamma   — display gamma (scalar or per-band list)
+#:   palette — optional colour ramp for single-band layers
+#:   index   — alternative to bands: compute a spectral index first
+#:
+#: All band names come from COPERNICUS/S2_SR_HARMONIZED (harmonized L2A):
+#:   B1 coastal, B2 blue, B3 green, B4 red, B5..B7 red-edge,
+#:   B8 NIR, B8A narrow NIR, B9 water vapour, B11 SWIR1, B12 SWIR2.
+BASEMAP_PRESETS: dict[str, dict[str, Any]] = {
+    "true_color": {
+        "label": "True colour (B4/B3/B2)",
+        "bands": ["B4", "B3", "B2"],
+        "min": 0,
+        "max": 3000,
+        "gamma": 1.4,
+    },
+    "false_color_nir": {
+        "label": "False colour NIR (B8/B4/B3) — vegetation red",
+        "bands": ["B8", "B4", "B3"],
+        "min": 0,
+        "max": 4000,
+        "gamma": 1.3,
+    },
+    "false_color_swir": {
+        "label": "False colour SWIR (B12/B8/B4) — snow/ice cyan",
+        "bands": ["B12", "B8", "B4"],
+        "min": 0,
+        "max": 5000,
+        "gamma": 1.3,
+    },
+    "ndsi": {
+        "label": "NDSI snow/ice index (B3-B11)/(B3+B11)",
+        "index": "ndsi",
+        "min": -0.2,
+        "max": 0.8,
+        "palette": ["#000080", "#00bfff", "#ffffff", "#ffe066", "#ff0000"],
+    },
+    "ndwi": {
+        "label": "NDWI water index (B3-B8)/(B3+B8)",
+        "index": "ndwi",
+        "min": -0.5,
+        "max": 0.5,
+        "palette": ["#8b4513", "#ffffe0", "#00bfff", "#00008b"],
+    },
+    "ndvi": {
+        "label": "NDVI vegetation index (B8-B4)/(B8+B4)",
+        "index": "ndvi",
+        "min": -0.2,
+        "max": 0.9,
+        "palette": ["#8b4513", "#ffffe0", "#90ee90", "#006400"],
+    },
+    "nir_gray": {
+        "label": "Grayscale NIR (B8)",
+        "bands": ["B8"],
+        "min": 0,
+        "max": 5000,
+        "gamma": 1.2,
+    },
+}
+
+#: Spectral indices computed from raw bands before visualisation.
+#: name -> (band_a, band_b); value = (a - b) / (a + b).
+_INDEX_FORMULAS: dict[str, tuple[str, str]] = {
+    "ndsi": ("B3", "B11"),
+    "ndwi": ("B3", "B8"),
+    "ndvi": ("B8", "B4"),
+}
+
+
+def _build_visualized_image(scene_id: str, vis_params: dict[str, Any]) -> Any:
+    """Return an ``ee.Image`` ready for ``getMapId`` from a preset spec.
+
+    Two kinds of layers are supported:
+
+    * **RGB / single-band** — ``vis_params`` has a ``bands`` list; the
+      bands are forwarded straight to ``getMapId``.
+    * **spectral index** — ``vis_params`` has an ``index`` key; we compute
+      ``(a - b) / (a + b)`` with ``ee.Image.normalizedDifference`` and let
+      the palette from ``vis_params['palette']`` colour the result.
+    """
+    import ee
+
+    image = ee.Image(S2_COLLECTION + "/" + _resolve_scene_id(scene_id))
+
+    index_name = vis_params.get("index")
+    if index_name:
+        if index_name not in _INDEX_FORMULAS:
+            raise ValueError(
+                f"Unknown spectral index '{index_name}'. "
+                f"Known: {sorted(_INDEX_FORMULAS)}"
+            )
+        band_a, band_b = _INDEX_FORMULAS[index_name]
+        return image.normalizedDifference([band_a, band_b]).rename(index_name)
+
+    return image
+
+
+def get_basemap(
+    scene_id: str,
+    preset: str = "true_color",
+    vis_params: dict[str, Any] | None = None,
+    bbox: list[float] | None = None,
+    clip: bool = False,
+) -> dict[str, Any]:
+    """Return an XYZ tile URL for one Sentinel-2 scene.
+
+    This is the function the UI uses to draw a *real* basemap under the
+    polygons instead of an empty background. Earth Engine's ``getMapId``
+    returns a short-lived map id whose tile template is a plain
+    ``https://earthengine.googleapis.com/v1/.../{z}/{x}/{y}`` XYZ URL that
+    OpenLayers' ``ol.source.XYZ`` can consume directly — no client-side
+    Earth Engine JS API, no OAuth in the browser.
+
+    Args:
+        scene_id: a scene id from :func:`search_sentinel2`; either the
+            fully-qualified id or just the bare ``<timestamp>_<tile>``
+            suffix (see :func:`_resolve_scene_id`).
+        preset: one of :data:`BASEMAP_PRESETS` — ``true_color``,
+            ``false_color_nir``, ``false_color_swir``, ``ndsi``, ``ndwi``,
+            ``ndvi``, ``nir_gray``. Ignored when ``vis_params`` is given.
+        vis_params: escape hatch — a raw ``vis_params`` dict (bands / min /
+            max / gamma / palette / index). When present it overrides the
+            preset entirely, which is what the UI sends when the user
+            tweaks the layer by hand.
+        bbox: optional ``[west, south, east, north]`` in EPSG:4326 to clip
+            the layer to the region of interest.
+        clip: if ``True`` and ``bbox`` is given, clip the image to the bbox.
+
+    Returns a dict with ``map_id``, ``token``, ``tile_url``, ``preset``,
+    ``scene_id``, ``band_names``, ``index`` and ``expires_in``.
+
+    The caller is expected to hand ``tile_url`` to ``ol.source.XYZ`` /
+    ``L.tileLayer``. The map id is valid for about 24 hours; after that
+    the UI just calls this function again.
+    """
+    import ee
+
+    _require_ee()
+
+    if vis_params is None:
+        if preset not in BASEMAP_PRESETS:
+            raise ValueError(
+                f"Unknown basemap preset '{preset}'. "
+                f"Known: {sorted(BASEMAP_PRESETS)}"
+            )
+        vis_params = dict(BASEMAP_PRESETS[preset])
+    else:
+        vis_params = dict(vis_params)
+
+    image = _build_visualized_image(scene_id, vis_params)
+
+    if clip and bbox is not None:
+        region = _bbox_to_ee_geometry(bbox)
+        image = image.clip(region)
+
+    # Earth Engine rejects unknown keys in vis_params, so hand it only the
+    # fields Image.getMapId actually understands.
+    ee_vis: dict[str, Any] = {}
+    for key in ("bands", "min", "max", "gamma", "palette", "opacity"):
+        if vis_params.get(key) is not None:
+            ee_vis[key] = vis_params[key]
+
+    map_id = image.getMapId(ee_vis)
+    tile_fetcher = map_id.get("tile_fetcher") or map_id.get("tileFetcher")
+    tile_url = None
+    if tile_fetcher is not None:
+        # The Python client wraps the response in a small object that
+        # exposes both ``url_format`` and ``urlFormat`` depending on the
+        # earthengine-api version; try both.
+        tile_url = (
+            getattr(tile_fetcher, "url_format", None)
+            or getattr(tile_fetcher, "urlFormat", None)
+        )
+    if not tile_url:
+        # Older / mocked clients return the raw JSON dict instead of the
+        # wrapper object — fall back to the documented fields.
+        tile_url = (
+            map_id.get("url_format")
+            or map_id.get("urlFormat")
+            or (map_id.get("tiles") or [None])[0]
+        )
+    if not tile_url:
+        raise RuntimeError(
+            "Earth Engine did not return a tile URL from getMapId(). "
+            f"Raw response keys: {sorted(map_id)}"
+        )
+
+    return {
+        "map_id": map_id.get("mapid") or map_id.get("mapId") or map_id.get("name"),
+        "token": map_id.get("token"),
+        "tile_url": tile_url,
+        "preset": preset,
+        "scene_id": _resolve_scene_id(scene_id),
+        "band_names": list(vis_params.get("bands", [])),
+        "index": vis_params.get("index"),
+        "expires_in": 86400,
+    }
+
+
+def basemap_presets() -> list[dict[str, Any]]:
+    """Return the catalogue of named basemap presets for the UI.
+
+    Each entry is a dict with ``name``, ``label`` and the full
+    ``vis_params`` so the frontend can render a dropdown without
+    duplicating the list on the JS side.
+    """
+    out: list[dict[str, Any]] = []
+    for name, params in BASEMAP_PRESETS.items():
+        entry = {"name": name, "label": params.get("label", name)}
+        entry.update({k: v for k, v in params.items() if k != "label"})
+        out.append(entry)
+    return out
