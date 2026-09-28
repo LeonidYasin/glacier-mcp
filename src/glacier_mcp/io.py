@@ -222,8 +222,10 @@ def render_tile_png(
         _sys.stderr.write(
             f"[render_tile_png] z={z} x={x} y={y}\n"
             f"  raster_w={raster_w} raster_h={raster_h} bands={bands}\n"
-            f"  left={left:.2f} top={top:.2f} right={right:.2f} bottom={bottom:.2f}\n"
-            f"  width_crs={width_crs:.2f} height_crs={height_crs:.2f} max_span_crs={max_span_crs:.2f}\n"
+            f"  left={left:.2f} top={top:.2f} "
+            f"right={right:.2f} bottom={bottom:.2f}\n"
+            f"  width_crs={width_crs:.2f} height_crs={height_crs:.2f} "
+            f"max_span_crs={max_span_crs:.2f}\n"
             f"  grid={grid} tile_span_crs={tile_span_crs:.4f}\n"
         )
         _sys.stderr.flush()
