@@ -648,10 +648,17 @@ function applyGeoTiffToMap(meta) {
     meta.crs_wkt && (meta.crs_wkt.includes("PROJCS") || /\bunits\s*=\s*m/.test(meta.crs_wkt));
   const units = wktSaysProjected ? "m" : "degrees";
 
+  // NOTE: we deliberately do NOT set `extent` on the custom projection.
+  // When a projection has an extent, OpenLayers constrains the view's
+  // centre to that extent. If the projection's extent is not recognised
+  // (e.g. proj4js has just registered it and OL is still using a stale
+  // cache), the view collapses to [0, 0] and any later setCenter() call
+  // is silently clamped back. Removing the extent lets the view centre
+  // wherever we tell it to; the raster layer already has its own extent
+  // so tiles outside the raster simply are not drawn.
   const projection = new ol.proj.Projection({
     code: crsCode,
     units,
-    extent,
     axisOrientation: "enu",
   });
 
