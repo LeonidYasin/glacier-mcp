@@ -535,8 +535,16 @@ body {
  */
 .ol-scale-line {
   background: rgba(0, 0, 0, 0.65);
+  /*
+   * Centre the scale bar horizontally along the bottom of the map.
+   * `left: 50%` + `translateX(-50%)` keeps it centred regardless of
+   * viewport width, without needing to know its own width. The bar has
+   * no drag behaviour on purpose: after a page reload it always snaps
+   * back to this fixed bottom-centre position.
+   */
   bottom: 12px;
-  left: 12px;
+  left: 50%;
+  transform: translateX(-50%);
   padding: 2px 8px;
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
