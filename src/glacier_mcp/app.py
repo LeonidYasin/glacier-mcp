@@ -50,6 +50,10 @@ _geotiffs: dict[str, _GeoTIFFEntry] = {}
 # the raster's projection once it is loaded). Shapefile export uses this.
 _current_crs = None  # pyproj.CRS | None
 
+# Id of the most recently uploaded GeoTIFF. Used by ``/api/state`` so a
+# page reload can restore the basemap without re-uploading the file.
+_current_geotiff_id: str | None = None
+
 
 def _render_preview_png(raster: gio.Raster, max_size: int = 4096) -> bytes:
     """Render a raster to an 8-bit PNG for use as a map layer.
