@@ -208,7 +208,7 @@ async def move_vertex_endpoint(index: int, payload: dict) -> JSONResponse:
             float(payload["dx"]),
             float(payload["dy"]),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await _broadcast_state()
     return JSONResponse({"ok": True})
