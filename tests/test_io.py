@@ -55,23 +55,62 @@ def test_load_geotiff_missing_file() -> None:
 
 def test_export_shapefile_writes_all_sidecars(tmp_path: Path) -> None:
     poly = Polygon([(500_000, 5_000_000), (500_100, 5_000_000), (500_100, 4_999_900)])
-    written = gio.export_shapefile(poly, UTM_33N, tmp_path, name="glacier")
+    written = gio.export_shapefile([poly], crs=UTM_33N, out_dir=tmp_path, name="glacier")
     names = {p.suffix for p in written}
-    # ESRI Shapefile sidecars that make the file usable elsewhere.
     assert {".shp", ".shx", ".dbf", ".prj"} <= names
     prj = tmp_path / "glacier.prj"
     assert prj.exists() and prj.stat().st_size > 0
 
 
+def test_export_shapefile_writes_one_row_per_polygon(tmp_path: Path) -> None:
+    """Two polygons -> two rows in the .dbf, with distinct names."""
+    import geopandas as gpd
+
+    p1 = Polygon([(500_000, 5_000_000), (500_100, 5_000_000), (500_100, 4_999_900)])
+    p2 = Polygon([(501_000, 5_000_000), (501_100, 5_000_000), (501_100, 4_999_900)])
+    gio.export_shapefile(
+        [p1, p2],
+        names=["Frost", "Nansen"],
+        crs=UTM_33N,
+        out_dir=tmp_path,
+        name="glaciers",
+    )
+    gdf = gpd.read_file(tmp_path / "glaciers.shp")
+    assert len(gdf) == 2
+    assert set(gdf["name"].tolist()) == {"Frost", "Nansen"}
+    assert set(gdf["fid"].tolist()) == {0, 1}
+
+
+def test_export_shapefile_defaults_names_when_missing(tmp_path: Path) -> None:
+    import geopandas as gpd
+
+    p1 = Polygon([(500_000, 5_000_000), (500_100, 5_000_000), (500_100, 4_999_900)])
+    p2 = Polygon([(501_000, 5_000_000), (501_100, 5_000_000), (501_100, 4_999_900)])
+    gio.export_shapefile([p1, p2], crs=UTM_33N, out_dir=tmp_path, name="glaciers")
+    gdf = gpd.read_file(tmp_path / "glaciers.shp")
+    assert set(gdf["name"].tolist()) == {"glacier_1", "glacier_2"}
+
+
+def test_export_shapefile_refuses_empty_list(tmp_path: Path) -> None:
+    with pytest.raises(gio.IOError):
+        gio.export_shapefile([], crs=UTM_33N, out_dir=tmp_path)
+
+
 def test_export_shapefile_refuses_empty_polygon(tmp_path: Path) -> None:
     with pytest.raises(gio.IOError):
-        gio.export_shapefile(Polygon(), UTM_33N, tmp_path)
+        gio.export_shapefile([Polygon()], crs=UTM_33N, out_dir=tmp_path)
 
 
 def test_export_shapefile_refuses_epsg_4326(tmp_path: Path) -> None:
     poly = Polygon([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)])
     with pytest.raises(gio.IOError):
-        gio.export_shapefile(poly, CRS.from_epsg(4326), tmp_path)
+        gio.export_shapefile([poly], crs=CRS.from_epsg(4326), out_dir=tmp_path)
+
+
+def test_export_shapefile_requires_crs(tmp_path: Path) -> None:
+    poly = Polygon([(500_000, 5_000_000), (500_100, 5_000_000), (500_100, 4_999_900)])
+    with pytest.raises(gio.IOError):
+        gio.export_shapefile([poly], out_dir=tmp_path)
 
 
 def test_polygon_to_crs_roundtrip() -> None:
@@ -86,5 +125,4 @@ def test_polygon_to_crs_roundtrip() -> None:
     )
     latlon = gio.polygon_to_crs(poly, UTM_33N, CRS.from_epsg(4326))
     back = gio.polygon_to_crs(latlon, CRS.from_epsg(4326), UTM_33N)
-    # 1e-3 m is well below raster resolution at 2 m/pixel.
     assert back.equals_exact(poly, tolerance=1e-3)
