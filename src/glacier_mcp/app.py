@@ -797,16 +797,28 @@ def get_gee_user(request: Request) -> gee.UserCredentials | None:
 def gee_auth_start() -> RedirectResponse:
     """Kick off the OAuth dance: redirect the browser to Google.
 
-    We issue a CSRF `state` and remember it in-process. We deliberately
-    do NOT set a cookie: modern Chrome drops SameSite=Lax cookies on the
-    cross-site navigation from google.com back to 127.0.0.1, so a cookie
-    here would produce 'state mismatch' on every callback.
+    We keep the live ``Flow`` object in ``_gee_states`` because it carries
+    the PKCE ``code_verifier`` that must be sent back on the callback.
+    We deliberately do NOT set a cookie for state: modern Chrome drops
+    SameSite=Lax cookies on the cross-site navigation from google.com
+    back to 127.0.0.1, so a cookie here would break on every callback.
     """
-    state = _issue_state()
+    # Generate the CSRF state first, then feed it to start_auth_flow so
+    # the value that lands in the URL matches the key we store.
+    state = secrets.token_urlsafe(24)
     try:
-        url = gee.build_auth_url(state=state)
+        url, flow = gee.start_auth_flow(state=state)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    _issue_state(flow)  # overwrites the placeholder with a fresh state
+    # We stored the flow under a *fresh* state, not under `state`. Fix
+    # that by re-issuing: simpler to just insert the flow under `state`.
+    # (Done inside _issue_state via a second call below.)
+    # -- Simpler approach: --
+    # Actually, to keep a single source of truth, we remove the placeholder
+    # and register the flow under `state` directly.
+    _gee_states.pop(next(reversed(_gee_states)), None)  # drop the last entry
+    _gee_states[state] = (__import__("time").monotonic(), flow)
     return RedirectResponse(url=url)
 
 
@@ -822,13 +834,14 @@ def gee_auth_callback(
         raise HTTPException(status_code=400, detail=f"Google returned error: {error}")
     if not code:
         raise HTTPException(status_code=400, detail="Missing 'code' from Google.")
-    if not _consume_state(state):
+    flow = _consume_state(state)
+    if flow is None:
         raise HTTPException(
             status_code=400,
             detail="OAuth 'state' mismatch — the sign-in link expired. Try again.",
         )
     try:
-        user = gee.exchange_code(code)
+        user = gee.finish_auth_flow(flow, code)
     except Exception as exc:  # noqa: BLE001 — surface any exchange failure
         raise HTTPException(
             status_code=400, detail=f"Token exchange failed: {exc}"
