@@ -9,8 +9,18 @@ Both share the same PolygonState via ``server.get_state()``.
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
+
+# Google OAuth adds `userinfo.profile` to the granted scope whenever we
+# ask for `userinfo.email` — this is a documented quirk of the
+# oauth2/v2/userinfo endpoint. google-auth-oauthlib reacts by raising
+# 'Scope has changed from ... to ...' on fetch_token, which kills the
+# login. OAUTHLIB_RELAX_TOKEN_SCOPE=1 tells the library to accept the
+# extra scope silently. Must be set BEFORE google_auth_oauthlib is
+# imported anywhere in the process.
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 # Load environment variables BEFORE importing .app / .server, because
 # glacier_mcp.gee reads GOOGLE_OAUTH_CLIENT_ID / _SECRET at import time
