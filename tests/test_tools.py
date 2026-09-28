@@ -95,7 +95,9 @@ def test_undo_redo_roundtrip() -> None:
 
 
 def test_undo_on_fresh_state_raises() -> None:
-    with pytest.raises(Exception):
+    from glacier_mcp.state import StateError
+
+    with pytest.raises(StateError):
         tools.undo()
 
 
