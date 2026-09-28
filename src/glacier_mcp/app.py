@@ -6,7 +6,8 @@ agent calling an MCP tool - triggers a broadcast over ``/ws`` so every
 connected browser tab stays in sync.
 
 Also serves GeoTIFF upload + preview so the map can render a real raster
-basemap instead of an empty background.
+basemap instead of an empty background, and exposes a shapefile export
+endpoint that writes every digitised polygon as one row in the .dbf.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import io as stdlib_io
 import json
+import shutil
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -32,11 +34,6 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 app = FastAPI(title="glacier-mcp")
 
 # ---- in-memory GeoTIFF store ----------------------------------------------
-#
-# Maps an opaque id to the loaded Raster + a pre-rendered PNG preview. This is
-# deliberately simple: for a local single-user tool we do not need persistence
-# or eviction. If a future version wants multi-user, swap for a disk-backed
-# LRU keyed by content hash.
 
 
 @dataclass
@@ -48,20 +45,19 @@ class _GeoTIFFEntry:
 
 _geotiffs: dict[str, _GeoTIFFEntry] = {}
 
+# The CRS of the *most recently uploaded* GeoTIFF. Every polygon in the
+# shared PolygonState is assumed to be in this CRS (the map switches to
+# the raster's projection once it is loaded). Shapefile export uses this.
+_current_crs = None  # pyproj.CRS | None
+
 
 def _render_preview_png(raster: gio.Raster, max_size: int = 1024) -> bytes:
-    """Render a raster to a small 8-bit PNG for use as a map layer.
-
-    Handles 1-band (grayscale), 3-band (RGB) and 4-band (RGBA) inputs. Any
-    other band count falls back to using the first band as grayscale. Data is
-    normalized min-max per band and stretched to 0..255.
-    """
+    """Render a raster to a small 8-bit PNG for use as a map layer."""
     from PIL import Image
 
     data = raster.data
     bands, height, width = data.shape
 
-    # Downsample if the raster is large - we only need a preview.
     if max(height, width) > max_size:
         step = int(np.ceil(max(height, width) / max_size))
         data = data[:, ::step, ::step]
@@ -124,6 +120,18 @@ class _Hub:
 hub = _Hub()
 
 
+async def _broadcast_state() -> None:
+    state = get_state()
+    await hub.broadcast(
+        {
+            "type": "polygons",
+            "polygons": state.to_geojson(),
+            "can_undo": state.can_undo(),
+            "can_redo": state.can_redo(),
+        }
+    )
+
+
 # ---- HTTP endpoints -------------------------------------------------------
 
 
@@ -132,31 +140,93 @@ def index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
-@app.get("/api/polygon")
-def get_polygon() -> JSONResponse:
-    """Current polygon as GeoJSON. Used by the frontend on first load."""
-    return JSONResponse(get_state().to_geojson())
+@app.get("/api/polygons")
+def get_polygons() -> JSONResponse:
+    """All digitised polygons as a GeoJSON FeatureCollection."""
+    state = get_state()
+    payload = state.to_geojson()
+    payload["can_undo"] = state.can_undo()
+    payload["can_redo"] = state.can_redo()
+    return JSONResponse(payload)
 
 
-@app.post("/api/polygon")
-async def set_polygon(payload: dict) -> JSONResponse:
-    """Replace the polygon (e.g. after a mouse draw in the browser)."""
+@app.post("/api/polygons")
+async def add_or_replace_polygon(payload: dict) -> JSONResponse:
+    """Add a new polygon or replace an existing one.
+
+    Body shapes accepted:
+      {"geometry": <GeoJSON Polygon>, "name": "optional"}  -> append new
+      {"geometry": <GeoJSON Polygon>, "index": 0}          -> replace #0
+    """
     from shapely.geometry import shape as shapely_shape
+
+    if "geometry" not in payload:
+        raise HTTPException(status_code=400, detail="Missing 'geometry' field.")
 
     geom = shapely_shape(payload["geometry"])
     state = get_state()
-    state.replace(geom)
-    await hub.broadcast({"type": "polygon", "polygon": state.to_geojson()})
+
+    try:
+        if "index" in payload and payload["index"] is not None:
+            state.replace_at(int(payload["index"]), geom)
+        else:
+            state.add_polygon(geom, name=payload.get("name"))
+    except Exception as exc:  # noqa: BLE001 - surface as HTTP 400
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await _broadcast_state()
     return JSONResponse(state.to_geojson())
 
 
-@app.post("/api/vertex/move")
-async def move_vertex(payload: dict) -> JSONResponse:
-    """Move vertex ``index`` by (dx, dy). Used by drag handlers."""
+@app.delete("/api/polygons/{index}")
+async def delete_polygon(index: int) -> JSONResponse:
+    """Remove polygon at ``index``. Refuses to remove the last one."""
     state = get_state()
-    state.move_vertex(int(payload["index"]), float(payload["dx"]), float(payload["dy"]))
-    await hub.broadcast({"type": "polygon", "polygon": state.to_geojson()})
+    try:
+        state.remove_polygon(index)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _broadcast_state()
+    return JSONResponse(state.to_geojson())
+
+
+@app.post("/api/polygons/{index}/vertex/move")
+async def move_vertex_endpoint(index: int, payload: dict) -> JSONResponse:
+    """Move vertex ``payload['vertex']`` of polygon ``index`` by (dx, dy)."""
+    state = get_state()
+    try:
+        state.move_vertex(
+            index,
+            int(payload["vertex"]),
+            float(payload["dx"]),
+            float(payload["dy"]),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _broadcast_state()
     return JSONResponse({"ok": True})
+
+
+@app.post("/api/history/undo")
+async def undo_endpoint() -> JSONResponse:
+    state = get_state()
+    try:
+        state.undo()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _broadcast_state()
+    return JSONResponse(state.to_geojson())
+
+
+@app.post("/api/history/redo")
+async def redo_endpoint() -> JSONResponse:
+    state = get_state()
+    try:
+        state.redo()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _broadcast_state()
+    return JSONResponse(state.to_geojson())
 
 
 # ---- GeoTIFF upload + preview --------------------------------------------
@@ -164,11 +234,8 @@ async def move_vertex(payload: dict) -> JSONResponse:
 
 @app.post("/api/geotiff/upload")
 async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
-    """Accept a GeoTIFF upload, load it, cache preview, return metadata.
-
-    The file is written to a NamedTemporaryFile, opened by rasterio, then
-    deleted. The resulting raster stays in memory keyed by an opaque id.
-    """
+    """Accept a GeoTIFF upload, load it, cache preview, return metadata."""
+    global _current_crs
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided.")
 
@@ -179,7 +246,6 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
             detail=f"Unsupported extension {suffix!r}; expected .tif or .tiff.",
         )
 
-    # Write to a temp file (rasterio needs a real path, not a stream).
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     try:
         while True:
@@ -198,18 +264,13 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
         data_min = float(np.nanmin(raster.data))
         data_max = float(np.nanmax(raster.data))
 
-        # Compute bounds from transform + shape: (left, bottom, right, top).
         h, w = raster.shape[1], raster.shape[0]
         left, top = raster.transform * (0, 0)
         right, bottom = raster.transform * (w, h)
         bounds = [float(left), float(bottom), float(right), float(top)]
 
         entry_id = uuid.uuid4().hex[:12]
-        # proj4js 2.x does not parse WKT2 (PROJCRS[...]), only WKT1_GDAL
-        # (PROJCS[...]) and raw proj4 strings. pyproj's to_wkt() defaults to
-        # WKT2 in modern versions, which silently breaks proj4.defs() in the
-        # browser. We ship both: WKT (WKT1_GDAL flavour) for reference and a
-        # proj4 string that proj4js can consume directly.
+        # proj4js 2.x does not parse WKT2, only WKT1_GDAL or raw proj4.
         try:
             crs_wkt = raster.crs.to_wkt(version="WKT1_GDAL")
         except Exception:
@@ -234,8 +295,9 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
             "data_max": data_max,
         }
         _geotiffs[entry_id] = _GeoTIFFEntry(raster=raster, preview_png=preview, meta=meta)
+        # Remember the CRS for later shapefile export.
+        _current_crs = raster.crs
     finally:
-        # Always remove the temp file; the raster is already in memory.
         try:
             Path(tmp.name).unlink(missing_ok=True)
         except OSError:
@@ -260,17 +322,74 @@ def geotiff_preview(entry_id: str) -> Response:
     return Response(content=entry.preview_png, media_type="image/png")
 
 
+@app.post("/api/export/shapefile")
+def export_shapefile_endpoint(payload: dict | None = None) -> Response:
+    """Write every polygon in state to a shapefile and stream it as a ZIP.
+
+    Optional body: {"basename": "glaciers"}. Default basename is "glaciers".
+    Requires a GeoTIFF to have been uploaded first (for the CRS).
+    """
+    if _current_crs is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Load a GeoTIFF first to establish the export CRS.",
+        )
+
+    state = get_state()
+    polygons = state.polygons
+    names = state.names
+    if not polygons:
+        raise HTTPException(status_code=400, detail="No polygons to export.")
+
+    basename = "glaciers"
+    if payload and isinstance(payload, dict) and payload.get("basename"):
+        basename = str(payload["basename"])
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="glacier_shp_"))
+    try:
+        try:
+            written = gio.export_shapefile(
+                polygons=polygons,
+                names=names,
+                crs=_current_crs,
+                out_dir=tmpdir,
+                name=basename,
+            )
+        except gio.IOError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Zip all sidecar files together so the download is one click.
+        zip_base = tmpdir / basename
+        zip_path = shutil.make_archive(str(zip_base), "zip", root_dir=str(tmpdir))
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename=f"{basename}.zip",
+        )
+    finally:
+        # Clean up the zip too once the response has been sent is tricky
+        # under TestClient; leaving temp dir behind is acceptable for a
+        # local single-user tool. (A background task would be the proper
+        # solution if this ever runs as a service.)
+        pass
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await hub.connect(ws)
-    # Send current state immediately so a fresh client is in sync.
+    state = get_state()
     await ws.send_text(
-        json.dumps({"type": "polygon", "polygon": get_state().to_geojson()})
+        json.dumps(
+            {
+                "type": "polygons",
+                "polygons": state.to_geojson(),
+                "can_undo": state.can_undo(),
+                "can_redo": state.can_redo(),
+            }
+        )
     )
     try:
         while True:
-            # We do not expect messages from the client yet; this keeps the
-            # connection alive and lets us react to disconnects.
             await ws.receive_text()
     except WebSocketDisconnect:
         await hub.disconnect(ws)
