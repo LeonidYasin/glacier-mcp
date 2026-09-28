@@ -338,13 +338,39 @@ function makeScaleLineDraggable() {
   let dragging = false;
   let grabDx = 0; // cursor offset inside the element, x
   let grabDy = 0; // cursor offset inside the element, y
+  // We remember which DragPan interactions were active before the drag so
+  // we can restore exactly that state on release (some maps may keep it
+  // disabled intentionally).
+  let disabledDragPans = [];
+
+  const setDragPanActive = (active) => {
+    map.getInteractions().forEach((interaction) => {
+      if (interaction instanceof ol.interaction.DragPan) {
+        interaction.setActive(active);
+      }
+    });
+  };
 
   const onPointerDown = (evt) => {
     if (evt.button !== 0) return; // left button only
-    // CRITICAL: OL attaches its own pointerdown on the map viewport and
-    // uses it to start a map pan. Without stopping propagation here, that
-    // handler runs first (or alongside) and swallows the gesture — the
-    // scale bar never moves. preventDefault also stops text selection.
+    // ROOT CAUSE of "the map pans instead of the bar moving": OL attaches
+    // its own pointerdown listener on the map VIEWPORT and starts a pan
+    // there. Since capture phase runs top-down, that listener fires before
+    // ours no matter where we attach. The reliable fix used by OL's own
+    // draggable controls (ZoomSlider, Rotate) is to disable the DragPan
+    // interaction for the duration of the gesture — then there is simply
+    // no competing handler and our pointermove drives the bar.
+    disabledDragPans = [];
+    map.getInteractions().forEach((interaction) => {
+      if (
+        interaction instanceof ol.interaction.DragPan &&
+        interaction.getActive()
+      ) {
+        disabledDragPans.push(interaction);
+      }
+    });
+    setDragPanActive(false);
+
     evt.preventDefault();
     evt.stopPropagation();
     dragging = true;
@@ -357,10 +383,16 @@ function makeScaleLineDraggable() {
     } catch (_) {
       /* pointer capture is best-effort */
     }
+    // Fallback listeners on document in case pointer capture is unavailable
+    // in this browser — the drag still works while the button is held.
+    document.addEventListener("pointermove", onPointerMove, true);
+    document.addEventListener("pointerup", endDrag, true);
+    document.addEventListener("pointercancel", endDrag, true);
   };
 
   const onPointerMove = (evt) => {
     if (!dragging) return;
+    evt.preventDefault();
     evt.stopPropagation();
     const vpRect = viewport.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
@@ -384,6 +416,12 @@ function makeScaleLineDraggable() {
     evt.stopPropagation();
     dragging = false;
     el.classList.remove("ol-scale-line-dragging");
+    // Restore DragPan to whatever it was before the gesture started.
+    disabledDragPans.forEach((interaction) => interaction.setActive(true));
+    disabledDragPans = [];
+    document.removeEventListener("pointermove", onPointerMove, true);
+    document.removeEventListener("pointerup", endDrag, true);
+    document.removeEventListener("pointercancel", endDrag, true);
     try {
       el.releasePointerCapture(evt.pointerId);
     } catch (_) {
@@ -391,13 +429,7 @@ function makeScaleLineDraggable() {
     }
   };
 
-  // capture:true on pointerdown so OUR handler runs before OL's viewport
-  // listener — otherwise OL starts a map pan first and we never see the
-  // gesture. The other listeners stay in the bubbling phase.
-  el.addEventListener("pointerdown", onPointerDown, { capture: true });
-  el.addEventListener("pointermove", onPointerMove);
-  el.addEventListener("pointerup", endDrag);
-  el.addEventListener("pointercancel", endDrag);
+  el.addEventListener("pointerdown", onPointerDown);
 }
 
 function sendAddPolygon(geometry) {
