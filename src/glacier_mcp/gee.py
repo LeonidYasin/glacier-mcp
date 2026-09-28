@@ -153,20 +153,14 @@ class UserCredentials:
         )
 
 
-def exchange_code(code: str) -> UserCredentials:
+def finish_auth_flow(flow: Any, code: str) -> UserCredentials:
     """Trade an authorization ``code`` for a refresh token + email.
 
-    Called from the ``/api/gee/auth/callback`` handler. On success, the
-    caller stores the returned object in the session and redirects the
-    browser back to the UI.
+    Must be called with the **same** ``Flow`` object that
+    ``start_auth_flow`` returned — that object carries the PKCE
+    ``code_verifier`` Google expects. Creating a new Flow here would fail
+    with ``(invalid_grant) Missing code verifier``.
     """
-    from google_auth_oauthlib.flow import Flow
-
-    flow = Flow.from_client_config(
-        _client_config(),
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI,
-    )
     flow.fetch_token(code=code)
     creds = flow.credentials
 
