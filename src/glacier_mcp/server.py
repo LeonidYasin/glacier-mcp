@@ -471,6 +471,69 @@ def gee_add_glaciers_to_map(
     }
 
 
+@mcp.tool()
+def gee_list_basemap_presets() -> list[dict]:
+    """List the named Sentinel-2 basemap visualisation presets.
+
+    Returns a list of {name, label, bands|index, min, max, gamma, palette}
+    entries. Use one of the ``name`` values as the ``preset`` argument of
+    ``gee_get_basemap``, or copy the full entry into ``vis_params`` and
+    tweak it. This is the catalogue the UI builds its basemap dropdown
+    from, exposed here so the agent can pick a layer without hard-coding
+    band names.
+    """
+    from . import gee
+
+    return gee.basemap_presets()
+
+
+@mcp.tool()
+def gee_get_basemap(
+    scene_id: str,
+    preset: str = "true_color",
+    vis_params: dict | None = None,
+    bbox: list[float] | None = None,
+    clip: bool = False,
+) -> dict:
+    """Return an XYZ tile URL for one Sentinel-2 scene (map basemap).
+
+    Use this to draw a real satellite image *under* the glacier polygons
+    instead of an empty background. The returned ``tile_url`` is a plain
+    ``https://earthengine.googleapis.com/.../{z}/{x}/{y}`` template that
+    OpenLayers / Leaflet can use directly — it is what the UI passes to
+    ``ol.source.XYZ``.
+
+    scene_id: a scene id from gee_search_sentinel2 (full id or bare
+              suffix both work — the collection prefix is normalised).
+    preset:   one of gee_list_basemap_presets() — ``true_color``,
+              ``false_color_nir``, ``false_color_swir``, ``ndsi``,
+              ``ndwi``, ``ndvi``, ``nir_gray``. Ignored when vis_params
+              is given.
+    vis_params: raw override — {bands, min, max, gamma, palette, index}.
+              Use this for a custom band combination the presets do not
+              cover (e.g. B5/B4/B3 red-edge false colour).
+    bbox:     optional [west, south, east, north] in EPSG:4326.
+    clip:     when True and bbox is given, clip the layer to the bbox.
+
+    Returns {map_id, token, tile_url, preset, scene_id, band_names,
+    index, expires_in}. The map id lives ~24 h; call again to refresh.
+    """
+    from . import gee
+
+    try:
+        gee._require_ee()
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+
+    return gee.get_basemap(
+        scene_id=scene_id,
+        preset=preset,
+        vis_params=vis_params,
+        bbox=bbox,
+        clip=clip,
+    )
+
+
 def run(host: str = "127.0.0.1", port: int = 8766) -> None:
     """Start the streamable-http MCP server on ``host:port``."""
     mcp.settings.host = host
