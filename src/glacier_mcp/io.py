@@ -17,8 +17,12 @@ from pyproj import CRS
 from shapely.geometry import Polygon
 
 
-class IOError(RuntimeError):  # noqa: A001 - domain-specific name is clearer here
-    """Raised on raster/shapefile I/O problems."""
+class IOError(RuntimeError):
+    """Raised on raster/shapefile I/O problems.
+
+    Name intentionally shadows the builtin: in this module, "IO error" is
+    the only meaningful failure mode, and callers catch this specific type.
+    """
 
 
 @dataclass(frozen=True)
