@@ -1701,19 +1701,19 @@ function initGeeBasemap() {
   if (applyBtn) applyBtn.addEventListener("click", applyGeeBasemap);
   if (clearBtn) clearBtn.addEventListener("click", clearGeeBasemap);
 
-  // Live opacity: change the layer's alpha without re-requesting tiles.
+  // Live opacity: change the active GEE layer's alpha without re-requesting
+  // tiles. Per-layer opacity is also editable in the Layers panel.
   if (opacityInput) {
     opacityInput.addEventListener("input", () => {
-      if (!geeBasemapLayer) return;
-      const value = parseFloat(opacityInput.value);
-      geeBasemapLayer.setOpacity(Number.isFinite(value) ? value : 1);
+      if (!activeGeeLayerId) return;
+      setLayerOpacity(activeGeeLayerId, parseFloat(opacityInput.value));
     });
   }
 
   // Switching to a preset re-loads the basemap immediately if one is up.
   if (presetSelect) {
     presetSelect.addEventListener("change", () => {
-      if (geeBasemapLayer && presetSelect.value) applyGeeBasemap();
+      if (activeGeeLayerId && presetSelect.value) applyGeeBasemap();
     });
   }
 
