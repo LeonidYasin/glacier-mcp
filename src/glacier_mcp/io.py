@@ -429,10 +429,10 @@ def render_viewport_png(
         col_f0, row_f0 = inv * (min_x, max_y)  # top-left corner in CRS
         col_f1, row_f1 = inv * (max_x, min_y)  # bottom-right corner in CRS
 
-        col_off = int(round(min(col_f0, col_f1)))
-        row_off = int(round(min(row_f0, row_f1)))
-        col_end = int(round(max(col_f0, col_f1)))
-        row_end = int(round(max(row_f0, row_f1)))
+        col_off = round(min(col_f0, col_f1))
+        row_off = round(min(row_f0, row_f1))
+        col_end = round(max(col_f0, col_f1))
+        row_end = round(max(row_f0, row_f1))
 
         # Clamp to raster bounds. If the requested bbox is entirely outside
         # the raster, return a fully transparent PNG of the requested size.
