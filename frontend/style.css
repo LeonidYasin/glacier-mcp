@@ -520,3 +520,60 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   margin: 6px 0;
 }
+
+/* ---- OpenLayers scale line -------------------------------------------- */
+/*
+ * Built-in OL control. It draws a horizontal bar whose pixel length and
+ * label are recomputed from the current view resolution on every zoom, so
+ * it always shows how many metres on the ground correspond to that many
+ * pixels on screen. This is independent of the physical screen DPI, which
+ * the "1 cm = X m" text in the HUD cannot account for.
+ *
+ * The default OL style is a light grey box on a white background — it is
+ * unreadable on top of a Sentinel-2 scene. We restyle it as white text on
+ * a translucent dark pill so it stays legible over any raster.
+ */
+.ol-scale-line {
+  background: rgba(0, 0, 0, 0.65);
+  /*
+   * Default position: centred horizontally, sitting just above the 44px
+   * `#polygon-panel` (see `#map { inset: 40px 0 44px 0; }`). 28px keeps
+   * the bar visually close to the status bar without overlapping it.
+   *
+   * `pointer-events: auto` is REQUIRED for dragging: OL places its controls
+   * inside `.ol-overlaycontainer-stopevent`, whose parent has
+   * `pointer-events: none` so that map panning works through the overlay
+   * layer. Without an explicit `auto` here, our pointerdown/pointermove
+   * handlers never receive events and the bar refuses to move — that was
+   * the root cause of the "linear doesn't drag" report.
+   */
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+/* While the user is actively dragging the scale bar, drop the centring
+ * transform so the element follows the cursor 1:1, and raise it above
+ * the map so it is never clipped by neighbouring controls. */
+.ol-scale-line.ol-scale-line-dragging {
+  transform: none;
+  z-index: 1000;
+}
+
+.ol-scale-line-inner {
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  border-color: #fff;
+  border-top-width: 2px;
+  border-bottom-width: 1px;
+  margin-top: 1px;
+  margin-bottom: 1px;
+}
