@@ -418,6 +418,20 @@ body {
   -webkit-user-select: none;
 }
 
+/* Keep raster pixels sharp on zoom-in.
+   OpenLayers draws the raster to a <canvas>; the single preview PNG is
+   upscaled by the browser on zoom-in, and by default the browser smooths
+   it (which looks blurry — the exact "muddy squares" problem). This makes
+   each source pixel a solid NxN square, matching what QGIS / ArcGIS show
+   past the raster's native resolution. `pixelated` is the modern name;
+   `crisp-edges` is kept for Firefox, which historically only honoured
+   that value. */
+#map canvas {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
 /* ---- debug HUD -------------------------------------------------------- */
 
 #debug-hud {
