@@ -66,6 +66,7 @@ select = [
     "SLF",  # flake8-self (private member access)
 ]
 ignore = [
+    "ANN001",  # missing type annotation for function argument
     "ANN101",  # missing self annotation (removed in newer ruff)
     "ANN102",  # missing cls annotation (removed in newer ruff)
     "ANN201",  # missing return type for public function - too strict for tests
@@ -74,6 +75,9 @@ ignore = [
     "ANN401",  # dynamically typed expressions (Any) - we use it deliberately
     "B008",    # function call in default arg - FastAPI Depends() pattern
 ]
+
+[tool.ruff.lint.isort]
+known-first-party = ["glacier_mcp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
