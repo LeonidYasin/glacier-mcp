@@ -160,6 +160,128 @@ def export_shapefile(
     return written
 
 
+def render_tile_png(
+    raster_path: Path,
+    z: int,
+    x: int,
+    y: int,
+    tile_size: int = 256,
+) -> bytes:
+    """Render one tile of the *source* raster as an RGBA PNG.
+
+    The tile grid is defined in the raster's own CRS (not Web Mercator):
+
+      * ``z = 0`` — the whole raster fits into a single ``tile_size`` square.
+      * ``z = N`` — the raster is split into ``2**N`` by ``2**N`` tiles.
+
+    ``(x, y)`` are tile column/row within that grid, with ``(0, 0)`` at the
+    **top-left** corner of the raster (rasterio's row 0, col 0). Tiles that
+    fall completely outside the raster return a transparent PNG; partial
+    tiles are padded with transparency.
+
+    Why this shape and not standard XYZ/Web Mercator: the raster may be in
+    UTM, Polar Stereographic, or any other CRS. Reprojecting on the fly for
+    every tile would be slow and lossy, so we cut tiles in the raster CRS
+    and let OpenLayers' TileGrid use the same CRS.
+    """
+    import rasterio
+    from rasterio.windows import Window
+    from PIL import Image
+
+    # Guard: negative zoom is not part of the protocol, and 2**z must fit
+    # in an int without blowing memory. 25 is a very generous ceiling for
+    # a local tool (a 2^25 grid is astronomically more than any raster we
+    # would ever open).
+    if z < 0 or z > 25:
+        raise ValueError(f"zoom out of range: {z}")
+
+    with rasterio.open(raster_path) as src:
+        raster_w = src.width
+        raster_h = src.height
+        bands = src.count
+
+        # Number of tiles along the *longer* axis at this zoom. Using the
+        # longer axis keeps tiles square in pixel space even for very
+        # elongated rasters.
+        grid = 2 ** z
+        span_px = max(raster_w, raster_h) / grid  # source pixels per tile
+
+        # Window bounds in source pixels for this tile. Note: (0,0) is the
+        # top-left corner, so row_off increases downwards, consistent with
+        # rasterio's row direction and OpenLayers' tile origin for rasters
+        # whose Y axis points up (the tile grid stores origin as top-left
+        # and works in raster pixel space).
+        col_off = int(round(x * span_px))
+        row_off = int(round(y * span_px))
+        win_w = max(1, int(round(span_px)))
+        win_h = win_w
+
+        # Fully outside the raster → transparent tile.
+        if col_off >= raster_w or row_off >= raster_h or col_off + win_w <= 0 or row_off + win_h <= 0:
+            return _transparent_png(tile_size)
+
+        # Clamp the window to the raster. After clamping we track how much
+        # padding is needed so the source pixels line up with the correct
+        # corner of the output tile.
+        src_col = max(0, col_off)
+        src_row = max(0, row_off)
+        src_col_end = min(raster_w, col_off + win_w)
+        src_row_end = min(raster_h, row_off + win_h)
+        read_w = max(1, src_col_end - src_col)
+        read_h = max(1, src_row_end - src_row)
+
+        window = Window(col_offset=src_col, row_offset=src_row, width=read_w, height=read_h)
+        data = src.read(window=window)  # shape (bands, read_h, read_w)
+
+    # --- Normalize each band to 0..255 and build an RGBA image -------------
+    # We keep the original (min-max) stretch to match the preview look.
+    def _stretch(band):
+        band = band.astype(np.float32)
+        lo = float(np.nanmin(band))
+        hi = float(np.nanmax(band))
+        if hi <= lo:
+            return np.zeros_like(band, dtype=np.uint8)
+        return ((band - lo) / (hi - lo) * 255.0).clip(0, 255).astype(np.uint8)
+
+    if bands >= 3:
+        rgb = np.stack([_stretch(data[i]) for i in range(3)], axis=-1)
+        img = Image.fromarray(rgb, mode="RGB")
+    else:
+        gray = _stretch(data[0])
+        img = Image.fromarray(gray, mode="L").convert("RGB")
+
+    # Resample the read window to exactly tile_size x tile_size.
+    if (read_w, read_h) != (tile_size, tile_size):
+        img = img.resize((tile_size, tile_size), Image.BILINEAR)
+
+    # Place the resized content into the correct corner of a transparent
+    # tile_size x tile_size canvas, so partial edge tiles do not smear.
+    canvas = Image.new("RGBA", (tile_size, tile_size), (0, 0, 0, 0))
+    paste_x = int(round((src_col - col_off) * tile_size / win_w))
+    paste_y = int(round((src_row - row_off) * tile_size / win_h))
+    content_w = int(round((src_col_end - src_col) * tile_size / win_w))
+    content_h = int(round((src_row_end - src_row) * tile_size / win_h))
+    # Final guard: if the tile touches the raster only by a sub-pixel sliver,
+    # content_w/content_h can come out as 0. Paste a single transparent pixel
+    # and skip — the tile is effectively empty.
+    if content_w > 0 and content_h > 0:
+        cropped = img.resize((content_w, content_h), Image.BILINEAR)
+        canvas.paste(cropped, (paste_x, paste_y))
+
+    buf = stdlib_io.BytesIO()
+    canvas.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def _transparent_png(tile_size: int = 256) -> bytes:
+    """A fully transparent tile of the given side length."""
+    from PIL import Image
+
+    buf = stdlib_io.BytesIO()
+    Image.new("RGBA", (tile_size, tile_size), (0, 0, 0, 0)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def polygon_to_crs(polygon: Polygon, from_crs: CRS, to_crs: CRS) -> Polygon:
     """Reproject a shapely polygon between two CRSs.
 
