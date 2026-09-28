@@ -42,10 +42,16 @@ class PolygonState:
         polygon: Polygon | None = None,
         history_size: int = DEFAULT_HISTORY,
     ) -> None:
-        if polygon is None:
-            polygon = Polygon([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
-        self._polygons: list[Polygon] = [polygon]
-        self._names: list[str] = ["glacier_1"]
+        # By default we start EMPTY — the user draws the first glacier. An
+        # initial polygon is only added if explicitly passed (tests rely on
+        # this to seed a square). Earlier versions auto-created a 1x1 square
+        # at the origin, which showed up as a phantom glacier on first run
+        # and could not be deleted because it was the last one.
+        self._polygons: list[Polygon] = []
+        self._names: list[str] = []
+        if polygon is not None:
+            self._polygons.append(polygon)
+            self._names.append("glacier_1")
         self._undo: deque[tuple[list[Polygon], list[str]]] = deque(maxlen=history_size)
         self._redo: deque[tuple[list[Polygon], list[str]]] = deque(maxlen=history_size)
 
