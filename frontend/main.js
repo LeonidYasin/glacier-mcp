@@ -712,9 +712,7 @@ function applyGeoTiffToMap(meta) {
     selectedIndex = null;
   }
 
-  const width = Math.abs(extent[2] - extent[0]);
-  const height = Math.abs(extent[3] - extent[1]);
-
+  // width / height / maxSpan are already computed above for the tile grid.
   const view = new ol.View({
     projection,
     center: [(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2],
