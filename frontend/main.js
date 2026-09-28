@@ -275,8 +275,23 @@ function sendAddPolygon(geometry) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ geometry: gj }),
   })
-    .then((r) => r.json())
-    .then((body) => applyCollectionFromServer({ type: "polygons", ...body }))
+    .then(async (r) => {
+      if (!r.ok) {
+        // 400 usually means the ring was invalid (self-intersecting etc.).
+        // Re-fetch the canonical state so the ghost feature disappears from
+        // the map instead of lingering and confusing the user.
+        const text = await r.text();
+        console.error("add polygon rejected:", r.status, text);
+        setStatus(`polygon rejected (${r.status}) — reloading state`);
+        const fresh = await fetch(`${BACKEND}/api/polygons`).then((x) => x.json());
+        applyCollectionFromServer({ type: "polygons", ...fresh });
+        return null;
+      }
+      return r.json();
+    })
+    .then((body) => {
+      if (body) applyCollectionFromServer({ type: "polygons", ...body });
+    })
     .catch((err) => console.error("add polygon failed:", err));
 }
 
