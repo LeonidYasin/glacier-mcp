@@ -8,9 +8,10 @@ state.
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from shapely.geometry import Polygon
+
 from glacier_mcp import app as app_module
 from glacier_mcp.server import get_state
-from shapely.geometry import Polygon
 
 client = TestClient(app_module.app)
 
