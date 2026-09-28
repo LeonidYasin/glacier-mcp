@@ -190,20 +190,30 @@ async function handleFileUpload(event) {
 function applyGeoTiffToMap(meta) {
   // Sanity checks first, so we surface a useful message instead of a
   // bare TypeError from inside proj4/OL.
-  if (!meta || !meta.crs_wkt) {
-    throw new Error("Server returned no crs_wkt — GeoTIFF has no usable CRS.");
+  if (!meta) {
+    throw new Error("Server returned empty metadata.");
   }
   if (typeof proj4 === "undefined") {
     throw new Error("proj4js not loaded (blocked CDN?) — cannot register CRS.");
   }
 
   const crsCode = `RASTER:${meta.id}`;
-  // Register the raster's WKT under an opaque code. proj4.defs accepts a
-  // WKT string; it returns a converter object we do not need here.
+  // proj4js parses raw proj4 strings and WKT1_GDAL, but NOT WKT2. The
+  // backend now sends both; we prefer the proj4 string because it always
+  // works, and fall back to WKT only if the proj4 string is missing.
+  const def = meta.crs_proj4 && meta.crs_proj4.trim().length > 0
+    ? meta.crs_proj4
+    : meta.crs_wkt;
+  if (!def) {
+    throw new Error("Server returned neither crs_proj4 nor crs_wkt — cannot register CRS.");
+  }
   try {
-    proj4.defs(crsCode, meta.crs_wkt);
+    proj4.defs(crsCode, def);
   } catch (e) {
-    throw new Error(`proj4.defs failed for ${crsCode}: ${e && e.message ? e.message : e}`);
+    throw new Error(
+      `proj4.defs failed for ${crsCode}: ${e && e.message ? e.message : e}` +
+      ` (def was: ${String(def).slice(0, 120)}...)`
+    );
   }
 
   // Build an OL projection object. Units are chosen from the WKT when
