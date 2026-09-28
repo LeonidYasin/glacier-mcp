@@ -807,11 +807,89 @@ function wireButtons() {
   // has to work when the browser translates Esc into "close" natively.
 }
 
+// ---- Debug HUD ------------------------------------------------------------
+//
+// Small overlay in the bottom-right corner that shows the view state
+// (zoom / resolution / center / mouse) and the loaded raster's identity
+// (id, filename, size, bands, CRS, extent, tile URL). Press D to toggle.
+// The raster block is filled on upload; the view block updates on every
+// zoom / pan; the mouse block updates on pointer move.
+const hudRoot = document.getElementById("debug-hud");
+const hudEls = {
+  zoom: document.getElementById("hud-zoom"),
+  resolution: document.getElementById("hud-resolution"),
+  center: document.getElementById("hud-center"),
+  mouse: document.getElementById("hud-mouse"),
+  id: document.getElementById("hud-id"),
+  filename: document.getElementById("hud-filename"),
+  size: document.getElementById("hud-size"),
+  bands: document.getElementById("hud-bands"),
+  crs: document.getElementById("hud-crs"),
+  extent: document.getElementById("hud-extent"),
+  tileUrl: document.getElementById("hud-tile-url"),
+};
+
+function hudFmt(n, digits = 2) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  return Number(n).toFixed(digits);
+}
+
+function updateHudView() {
+  if (!map || !hudEls.zoom) return;
+  const view = map.getView();
+  const z = view.getZoom();
+  const res = view.getResolution();
+  const c = view.getCenter() || [NaN, NaN];
+  hudEls.zoom.textContent = z === undefined ? "—" : z.toFixed(2);
+  hudEls.resolution.textContent =
+    res === undefined ? "—" : res.toExponential(3);
+  hudEls.center.textContent = `[${hudFmt(c[0])}, ${hudFmt(c[1])}]`;
+}
+
+function updateHudMouse(evt) {
+  if (!hudEls.mouse) return;
+  const [x, y] = evt.coordinate;
+  hudEls.mouse.textContent = `[${hudFmt(x)}, ${hudFmt(y)}]`;
+}
+
+function updateHudRaster(meta) {
+  if (!meta || !hudEls.id) return;
+  hudEls.id.textContent = meta.id || "—";
+  hudEls.filename.textContent = meta.filename || "—";
+  hudEls.size.textContent = `${meta.width} × ${meta.height} px`;
+  hudEls.bands.textContent =
+    meta.bands != null ? String(meta.bands) : "—";
+  const epsg = meta.crs_epsg != null ? `EPSG:${meta.crs_epsg}` : "(no EPSG)";
+  hudEls.crs.textContent = `${meta.crs_name || "unknown"} · ${epsg}`;
+  hudEls.extent.textContent =
+    `[${hudFmt(meta.bounds[0])}, ${hudFmt(meta.bounds[1])}, ` +
+    `${hudFmt(meta.bounds[2])}, ${hudFmt(meta.bounds[3])}]`;
+  hudEls.tileUrl.textContent =
+    `/api/geotiff/${meta.id}/tile/{z}/{x}/{y}.png`;
+}
+
+function installHud() {
+  if (!map || !hudEls.zoom) return;
+  map.getView().on("change:resolution", updateHudView);
+  map.getView().on("change:center", updateHudView);
+  map.on("pointermove", updateHudMouse);
+  document.addEventListener("keydown", (e) => {
+    if ((e.key === "d" || e.key === "D") && hudRoot) {
+      const tag = e.target && e.target.tagName;
+      if (!tag || !/^(INPUT|TEXTAREA)$/.test(tag)) {
+        hudRoot.classList.toggle("hud-hidden");
+      }
+    }
+  });
+  updateHudView();
+}
+
 // ---- Boot -----------------------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", () => {
   initMap();
   wireButtons();
+  installHud();
   if (fileInput) {
     fileInput.addEventListener("change", handleFileUpload);
   }
