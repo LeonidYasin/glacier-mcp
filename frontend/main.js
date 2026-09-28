@@ -226,6 +226,9 @@ function initMap() {
     const idx = hit ? hit.get("index") : null;
     selectedIndex = typeof idx === "number" ? idx : null;
     vectorLayer.changed();
+    // Refresh the bottom chip panel so the selected chip is highlighted, and
+    // update the Delete button's enabled state.
+    renderPolygonChips(currentCollection());
     if (selectedIndex === null) {
       setStatus(`${vectorSource.getFeatures().length} glacier(s) — nothing selected`);
     } else {
