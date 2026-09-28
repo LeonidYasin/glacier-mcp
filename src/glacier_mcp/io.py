@@ -8,6 +8,7 @@ polar glacier geometry to metres that mean nothing on the ground.
 
 from __future__ import annotations
 
+import io as stdlib_io
 from dataclasses import dataclass
 from pathlib import Path
 
