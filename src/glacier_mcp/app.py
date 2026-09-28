@@ -22,8 +22,10 @@ import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+from pydantic import BaseModel
 # titiler: production COG tile server used by NASA Worldview / FIRMS. It
 # reads the source GeoTIFF through rasterio, picks the right overview for
 # the requested zoom, resamples to 256x256, and returns a PNG. Handles
