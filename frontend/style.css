@@ -417,3 +417,55 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* ---- debug HUD -------------------------------------------------------- */
+
+#debug-hud {
+  position: absolute;
+  /* Above the bottom polygon panel (which is 44px tall). */
+  bottom: 52px;
+  right: 8px;
+  z-index: 12;
+  padding: 8px 10px;
+  min-width: 320px;
+  max-width: 520px;
+  background: rgba(20, 20, 20, 0.82);
+  color: #e0e0e0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+#debug-hud.hud-hidden {
+  display: none;
+}
+
+#debug-hud .hud-row {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+#debug-hud .hud-row > b {
+  flex: 0 0 92px;
+  color: #9fb8d4;
+  font-weight: 500;
+}
+
+#debug-hud .hud-row > span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#debug-hud hr {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin: 6px 0;
+}
