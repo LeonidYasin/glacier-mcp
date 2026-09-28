@@ -141,23 +141,38 @@ function initMap() {
     sendReplacePolygon(idx, feature.getGeometry());
   });
 
-  // Click on a polygon selects it.
+  // Click on a polygon selects it. A generous hitTolerance lets the user
+  // click slightly outside a thin outline and still select the polygon.
   map.on("singleclick", (evt) => {
     let hit = null;
-    map.forEachFeatureAtPixel(evt.pixel, (feat) => {
-      hit = feat;
-      return true;
-    });
-    selectedIndex = hit ? hit.get("index") : null;
+    map.forEachFeatureAtPixel(
+      evt.pixel,
+      (feat) => {
+        hit = feat;
+        return true;
+      },
+      { hitTolerance: 6 }
+    );
+    const idx = hit ? hit.get("index") : null;
+    selectedIndex = typeof idx === "number" ? idx : null;
     vectorLayer.changed();
+    if (selectedIndex === null) {
+      setStatus(`${vectorSource.getFeatures().length} glacier(s) — nothing selected`);
+    } else {
+      const name = hit.get("name") || `glacier_${selectedIndex + 1}`;
+      setStatus(`selected: ${name} — Delete to remove, drag vertices to edit`);
+    }
   });
 
-  // Delete key removes the selected polygon.
+  // Delete key removes the selected polygon. Guard against undefined as well
+  // as null: `selectedIndex` could be `undefined` if a feature had no index.
   window.addEventListener("keydown", (evt) => {
-    if ((evt.key === "Delete" || evt.key === "Backspace") && selectedIndex !== null) {
-      sendDeletePolygon(selectedIndex);
-      evt.preventDefault();
-    }
+    const canDelete =
+      (evt.key === "Delete" || evt.key === "Backspace") &&
+      typeof selectedIndex === "number";
+    if (!canDelete) return;
+    sendDeletePolygon(selectedIndex);
+    evt.preventDefault();
   });
 
   fetch(`${BACKEND}/api/polygons`)
