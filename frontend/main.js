@@ -875,10 +875,14 @@ function wireButtons() {
 // The raster block is filled on upload; the view block updates on every
 // zoom / pan; the mouse block updates on pointer move.
 const hudRoot = document.getElementById("debug-hud");
+let _lastResolutions = null;
+
 const hudEls = {
   zoom: document.getElementById("hud-zoom"),
   resolution: document.getElementById("hud-resolution"),
   center: document.getElementById("hud-center"),
+  resLimits: document.getElementById("hud-res-limits"),
+  resArray: document.getElementById("hud-res-array"),
   mouse: document.getElementById("hud-mouse"),
   id: document.getElementById("hud-id"),
   filename: document.getElementById("hud-filename"),
