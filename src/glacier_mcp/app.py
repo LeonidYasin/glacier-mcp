@@ -35,10 +35,24 @@ from titiler.core.factory import TilerFactory as _CogTilerFactory
 from rio_tiler.errors import TileOutsideBounds as _TileOutsideBounds
 from rio_tiler.io.rasterio import Reader as _RioReader
 from rio_tiler.models import ImageData as _ImageData
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 
+from . import gee
 from . import io as gio
 from .server import get_state
 
