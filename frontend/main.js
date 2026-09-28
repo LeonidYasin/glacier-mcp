@@ -788,10 +788,17 @@ function applyGeoTiffToMap(meta) {
     // tile across the whole screen. That is what produced the visible
     // "tiles mosaic" — the same tile painted many times.
     maxResolution: resolutions[0],
-    // Keep the raster's full detail available: allow zooming to the native
-    // pixel resolution and beyond, but never let the view drift so far out
-    // that the raster becomes a dot.
-    minResolution: Math.max(width / 100000, 1e-9),
+    // Keep the raster's full detail available: allow zooming FAR past the
+    // raster's native pixel resolution. We deliberately do NOT put an
+    // artificial floor here — the user can decide how deep to go (past the
+    // native resolution the pixels just become bigger squares, and the
+    // `image-rendering: pixelated` CSS keeps them crisp instead of blurry).
+    //
+    // The only real limit is `resolutions[0] / 1e6` — three orders of
+    // magnitude below the coarsest tile resolution. Previously we used
+    // `width / 100000`, which for a Sentinel-2 scene (~54 km wide) worked
+    // out to ~0.55 m/px and effectively hard-stopped the wheel around 8x.
+    minResolution: resolutions[0] / 1e6,
   });
   map.setView(view);
   // Re-subscribe the HUD to the NEW view. `installHud()` subscribed to the
