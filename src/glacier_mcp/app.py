@@ -51,8 +51,15 @@ _geotiffs: dict[str, _GeoTIFFEntry] = {}
 _current_crs = None  # pyproj.CRS | None
 
 
-def _render_preview_png(raster: gio.Raster, max_size: int = 1024) -> bytes:
-    """Render a raster to a small 8-bit PNG for use as a map layer."""
+def _render_preview_png(raster: gio.Raster, max_size: int = 4096) -> bytes:
+    """Render a raster to an 8-bit PNG for use as a map layer.
+
+    ``max_size`` caps the longest side. 4096 keeps enough detail that the
+    user can zoom in and still see the raster's structure, while staying a
+    sane size for a single PNG (a 4096x4096 RGB PNG is ~10-20 MB, fine for
+    a local browser to hold as one ImageStatic). If the source raster is
+    smaller than max_size it is used at full resolution.
+    """
     from PIL import Image
 
     data = raster.data
