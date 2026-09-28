@@ -711,6 +711,9 @@ function wireButtons() {
   const redoBtn = document.getElementById("btn-redo");
   const exportBtn = document.getElementById("btn-export");
   const deleteBtn = document.getElementById("btn-delete-selected");
+  const showAllBtn = document.getElementById("btn-show-all");
+  const modalCloseBtn = document.getElementById("modal-close");
+  const modalSearch = document.getElementById("modal-search");
   // "Draw new polygon" toggles draw mode on/off. Clicking again cancels.
   if (drawBtn) drawBtn.addEventListener("click", () => setDrawMode(!drawMode));
   if (undoBtn) undoBtn.addEventListener("click", sendUndo);
@@ -722,6 +725,13 @@ function wireButtons() {
       sendDeletePolygon(selectedIndex);
     });
   }
+  if (showAllBtn) showAllBtn.addEventListener("click", openPolygonModal);
+  if (modalCloseBtn) modalCloseBtn.addEventListener("click", closePolygonModal);
+  if (modalSearch) {
+    modalSearch.addEventListener("input", () => renderModalTable(currentCollection()));
+  }
+  // Esc inside the modal closes it via <dialog>'s default, but the × also
+  // has to work when the browser translates Esc into "close" natively.
 }
 
 // ---- Boot -----------------------------------------------------------------
