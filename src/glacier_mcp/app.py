@@ -33,6 +33,27 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 app = FastAPI(title="glacier-mcp")
 
+
+# ---- COG tile server (titiler) -------------------------------------------
+#
+# We do NOT hand-roll raster tiling any more. titiler is the production COG
+# tile server used by NASA Worldview / FIRMS: it reads the source GeoTIFF
+# through rasterio, picks the right overview level for the requested zoom,
+# resamples to the tile size, and returns a PNG. It handles non-square
+# rasters, arbitrary CRS, multi-band, rescale and colormap — all the pieces
+# that broke when we tried to write them by hand.
+#
+# Routes exposed under /cog:
+#   GET /cog/tiles/{z}/{x}/{y}.png?url=<path>          — single raster
+#   GET /cog/tilejson.json?url=<path>                   — metadata for OL
+#
+# The frontend builds one ol.source.TileImage per /cog/tiles URL; mosaics
+# and overlays become additional layers pointing at their own url=.
+from titiler.core.factory import TilerFactory as _CogTilerFactory
+
+_cog_tiler = _CogTilerFactory()
+app.include_router(_cog_tiler.router, prefix="/cog", tags=["cog"])
+
 # ---- in-memory GeoTIFF store ----------------------------------------------
 
 
