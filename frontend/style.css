@@ -67,7 +67,7 @@ body {
 }
 
 /* Accent button (Export): green, distinct from Load. */
-#toolbar .btn.btn-accent {
+.btn.btn-accent, #toolbar .btn.btn-accent {
   background: #2f855a;
 }
 
