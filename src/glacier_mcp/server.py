@@ -368,7 +368,7 @@ def gee_search_sentinel2(
     from . import gee
 
     try:
-        gee._require_ee()
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
     except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
     return gee.search_sentinel2(
@@ -401,7 +401,7 @@ def gee_extract_glaciers(
     from . import gee
 
     try:
-        gee._require_ee()
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
     except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
     return gee.extract_glacier_contours(
@@ -433,7 +433,7 @@ def gee_add_glaciers_to_map(
     from . import gee
 
     try:
-        gee._require_ee()
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
     except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
 
@@ -528,7 +528,7 @@ def gee_get_basemap(
     from . import gee
 
     try:
-        gee._require_ee()
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
     except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
 
