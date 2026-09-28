@@ -296,6 +296,13 @@ class _Hub:
 hub = _Hub()
 
 
+@app.on_event("startup")
+async def _remember_hub_loop() -> None:
+    """Remember the event loop so worker-thread MCP tools can schedule
+    coroutines on it (see _Hub.push_gee_basemap)."""
+    hub.loop = asyncio.get_running_loop()
+
+
 async def _broadcast_state() -> None:
     state = get_state()
     await hub.broadcast(
