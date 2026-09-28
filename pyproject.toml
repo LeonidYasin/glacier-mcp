@@ -42,6 +42,13 @@ dependencies = [
     # rio-tiler is titiler's raster engine; pinning explicitly to avoid
     # version drift between titiler.core and its reader.
     "rio-tiler>=6.0",
+    # Earth Engine + OAuth. See src/glacier_mcp/gee.py. earthengine-api
+    # changes its auth surface a lot between majors, so this is a soft
+    # pin to the 0.1.x line.
+    "earthengine-api>=0.1.390",
+    "google-auth-oauthlib>=1.2",
+    "google-auth-httplib2>=0.2",
+    "google-api-python-client>=2.120",
 ]
 
 [project.optional-dependencies]
