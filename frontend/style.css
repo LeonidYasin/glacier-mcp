@@ -71,7 +71,7 @@ body {
   background: #2f855a;
 }
 
-#toolbar .btn.btn-accent:hover {
+.btn.btn-accent:hover, #toolbar .btn.btn-accent:hover {
   background: #276749;
 }
 
