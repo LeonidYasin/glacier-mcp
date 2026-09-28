@@ -542,12 +542,12 @@ def gee_get_basemap(
     # Hand the layer to the browser so it actually shows up on the map.
     # Lazy import: app.py pulls in titiler/rasterio, which we do not want
     # to import when the MCP server runs in a slim context.
+    result["pushed_to"] = 0
     if push:
         try:
-            from .app import hub
-
-            pushed = await_hub_push = hub.push_gee_basemap  # noqa: F841
             import asyncio as _asyncio
+
+            from .app import hub
 
             payload = {
                 "tile_url": result["tile_url"],
@@ -555,27 +555,15 @@ def gee_get_basemap(
                 "preset": result["preset"],
                 "bbox": bbox,
             }
-            # The MCP tool runs inside the FastAPI event loop (both servers
-            # share one process), so we can schedule the broadcast on the
-            # running loop.
-            loop = _asyncio.get_running_loop()
-            n = loop.run_until_complete(hub.push_gee_basemap(payload)) if False else None
-            # Simpler: the caller is sync, so create a task if a loop is
-            # running; otherwise skip the push.
-            try:
-                running = _asyncio.get_running_loop()
-            except RuntimeError:
-                running = None
-            if running is not None:
-                running.create_task(hub.push_gee_basemap(payload))
+            # FastMCP runs sync tools in a worker thread, so there is no
+            # running loop here. Schedule the broadcast on the main loop
+            # that owns the WebSocket hub.
+            loop = getattr(hub, "loop", None)
+            if loop is not None and loop.is_running():
+                _asyncio.run_coroutine_threadsafe(hub.push_gee_basemap(payload), loop)
                 result["pushed_to"] = "scheduled"
-            else:
-                result["pushed_to"] = 0
         except Exception as exc:  # noqa: BLE001 — push is best-effort
             result["push_error"] = str(exc)
-            result["pushed_to"] = 0
-    else:
-        result["pushed_to"] = "disabled"
 
     return result
 
