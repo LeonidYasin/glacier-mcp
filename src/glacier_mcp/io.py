@@ -95,7 +95,6 @@ def export_shapefile(
 
     # Import lazily so the rest of the package imports without geopandas.
     import geopandas as gpd
-    from shapely.geometry import mapping
 
     out = Path(out_dir).expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
