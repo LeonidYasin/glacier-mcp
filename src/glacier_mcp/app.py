@@ -49,7 +49,6 @@ app = FastAPI(title="glacier-mcp")
 #
 # The frontend builds one ol.source.TileImage per /cog/tiles URL; mosaics
 # and overlays become additional layers pointing at their own url=.
-from titiler.core.factory import TilerFactory as _CogTilerFactory
 
 _cog_tiler = _CogTilerFactory()
 app.include_router(_cog_tiler.router, prefix="/cog", tags=["cog"])
