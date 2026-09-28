@@ -355,7 +355,9 @@ def export_shapefile_endpoint(payload: dict | None = None) -> Response:
     tmpdir = Path(tempfile.mkdtemp(prefix="glacier_shp_"))
     try:
         try:
-            written = gio.export_shapefile(
+            # We only need the side effect (files written into tmpdir);
+            # the list of paths is not used further here.
+            gio.export_shapefile(
                 polygons=polygons,
                 names=names,
                 crs=_current_crs,
