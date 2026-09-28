@@ -205,10 +205,25 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
         bounds = [float(left), float(bottom), float(right), float(top)]
 
         entry_id = uuid.uuid4().hex[:12]
+        # proj4js 2.x does not parse WKT2 (PROJCRS[...]), only WKT1_GDAL
+        # (PROJCS[...]) and raw proj4 strings. pyproj's to_wkt() defaults to
+        # WKT2 in modern versions, which silently breaks proj4.defs() in the
+        # browser. We ship both: WKT (WKT1_GDAL flavour) for reference and a
+        # proj4 string that proj4js can consume directly.
+        try:
+            crs_wkt = raster.crs.to_wkt(version="WKT1_GDAL")
+        except Exception:
+            crs_wkt = raster.crs.to_wkt()
+        try:
+            crs_proj4 = raster.crs.to_proj4()
+        except Exception:
+            crs_proj4 = ""
+
         meta = {
             "id": entry_id,
             "filename": file.filename,
-            "crs_wkt": raster.crs.to_wkt(),
+            "crs_wkt": crs_wkt,
+            "crs_proj4": crs_proj4,
             "crs_epsg": raster.crs.to_epsg(),
             "crs_name": raster.crs.name,
             "bounds": bounds,
