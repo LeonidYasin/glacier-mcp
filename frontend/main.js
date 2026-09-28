@@ -17,7 +17,12 @@ const BACKEND = window.location.origin;
 
 // Register proj4 with OpenLayers once, so that any CRS we add later via
 // proj4.defs() is automatically visible to ol.proj.* calls.
-ol.proj.proj4.register(proj4);
+// Guarded so a blocked CDN does not silently kill the whole script.
+if (typeof proj4 !== "undefined" && ol.proj.proj4) {
+  ol.proj.proj4.register(proj4);
+} else {
+  console.warn("proj4js not available at load time; raster CRS will be unavailable.");
+}
 
 // ---- WebSocket sync -------------------------------------------------------
 
