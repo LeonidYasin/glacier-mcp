@@ -56,7 +56,7 @@ body {
 }
 
 /* Secondary button (Undo / Redo): outlined, muted. */
-#toolbar .btn.btn-secondary {
+.btn.btn-secondary, #toolbar .btn.btn-secondary {
   background: transparent;
   border: 1px solid #4a5568;
   color: #cbd5e0;
