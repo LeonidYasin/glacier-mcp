@@ -299,62 +299,61 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
     # file was unlinked in the `finally` below.
     upload_dir = Path(tempfile.mkdtemp(prefix="glacier_raster_"))
     raster_path = upload_dir / f"source{suffix}"
+    with raster_path.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+
     try:
-        with raster_path.open("wb") as out:
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                out.write(chunk)
+        raster = gio.load_geotiff(raster_path)
+    except gio.IOError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        try:
-            raster = gio.load_geotiff(raster_path)
-        except gio.IOError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    preview = _render_preview_png(raster)
+    data_min = float(np.nanmin(raster.data))
+    data_max = float(np.nanmax(raster.data))
 
-        preview = _render_preview_png(raster)
-        data_min = float(np.nanmin(raster.data))
-        data_max = float(np.nanmax(raster.data))
+    h, w = raster.shape[1], raster.shape[0]
+    left, top = raster.transform * (0, 0)
+    right, bottom = raster.transform * (w, h)
+    bounds = [float(left), float(bottom), float(right), float(top)]
 
-        h, w = raster.shape[1], raster.shape[0]
-        left, top = raster.transform * (0, 0)
-        right, bottom = raster.transform * (w, h)
-        bounds = [float(left), float(bottom), float(right), float(top)]
+    entry_id = uuid.uuid4().hex[:12]
+    # proj4js 2.x does not parse WKT2, only WKT1_GDAL or raw proj4.
+    try:
+        crs_wkt = raster.crs.to_wkt(version="WKT1_GDAL")
+    except Exception:
+        crs_wkt = raster.crs.to_wkt()
+    try:
+        crs_proj4 = raster.crs.to_proj4()
+    except Exception:
+        crs_proj4 = ""
 
-        entry_id = uuid.uuid4().hex[:12]
-        # proj4js 2.x does not parse WKT2, only WKT1_GDAL or raw proj4.
-        try:
-            crs_wkt = raster.crs.to_wkt(version="WKT1_GDAL")
-        except Exception:
-            crs_wkt = raster.crs.to_wkt()
-        try:
-            crs_proj4 = raster.crs.to_proj4()
-        except Exception:
-            crs_proj4 = ""
-
-        meta = {
-            "id": entry_id,
-            "filename": file.filename,
-            "crs_wkt": crs_wkt,
-            "crs_proj4": crs_proj4,
-            "crs_epsg": raster.crs.to_epsg(),
-            "crs_name": raster.crs.name,
-            "bounds": bounds,
-            "width": int(raster.shape[0]),
-            "height": int(raster.shape[1]),
-            "bands": int(raster.data.shape[0]),
-            "data_min": data_min,
-            "data_max": data_max,
-        }
-        _geotiffs[entry_id] = _GeoTIFFEntry(raster=raster, preview_png=preview, meta=meta)
-        # Remember the CRS for later shapefile export.
-        _current_crs = raster.crs
-        # Remember which id is "current" so /api/state can restore the
-        # basemap after a page reload without re-uploading the file.
-        _current_geotiff_id = entry_id
-        # NOTE: the raster file on disk is intentionally left in place:
-        # `render_tile_png` opens it on every tile request. It lives in a
-        # per-upload tempdir and is cleaned up by the OS.
+    meta = {
+        "id": entry_id,
+        "filename": file.filename,
+        "crs_wkt": crs_wkt,
+        "crs_proj4": crs_proj4,
+        "crs_epsg": raster.crs.to_epsg(),
+        "crs_name": raster.crs.name,
+        "bounds": bounds,
+        "width": int(raster.shape[0]),
+        "height": int(raster.shape[1]),
+        "bands": int(raster.data.shape[0]),
+        "data_min": data_min,
+        "data_max": data_max,
+    }
+    _geotiffs[entry_id] = _GeoTIFFEntry(raster=raster, preview_png=preview, meta=meta)
+    # Remember the CRS for later shapefile export.
+    _current_crs = raster.crs
+    # Remember which id is "current" so /api/state can restore the
+    # basemap after a page reload without re-uploading the file.
+    _current_geotiff_id = entry_id
+    # NOTE: the raster file on disk is intentionally left in place:
+    # `render_tile_png` opens it on every tile request. It lives in a
+    # per-upload tempdir and is cleaned up by the OS.
 
     return JSONResponse(meta)
 
