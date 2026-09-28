@@ -352,11 +352,9 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
         # Remember which id is "current" so /api/state can restore the
         # basemap after a page reload without re-uploading the file.
         _current_geotiff_id = entry_id
-    finally:
-        try:
-            Path(tmp.name).unlink(missing_ok=True)
-        except OSError:
-            pass
+        # NOTE: the raster file on disk is intentionally left in place:
+        # `render_tile_png` opens it on every tile request. It lives in a
+        # per-upload tempdir and is cleaned up by the OS.
 
     return JSONResponse(meta)
 
