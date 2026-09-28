@@ -281,7 +281,7 @@ async def redo_endpoint() -> JSONResponse:
 @app.post("/api/geotiff/upload")
 async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
     """Accept a GeoTIFF upload, load it, cache preview, return metadata."""
-    global _current_crs
+    global _current_crs, _current_geotiff_id
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided.")
 
