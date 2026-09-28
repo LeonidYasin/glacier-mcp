@@ -187,6 +187,23 @@ def get_polygons() -> JSONResponse:
     return JSONResponse(payload)
 
 
+@app.get("/api/geotiff/{entry_id}/cog-url")
+def geotiff_cog_url(entry_id: str) -> JSONResponse:
+    """Return the on-disk path of the source GeoTIFF for use by titiler.
+
+    The frontend uses this to build a titiler URL like::
+
+        /cog/WebMercatorQuad/tilejson.json?url=/tmp/glacier_raster_x/source.tif
+
+    Only paths that were registered via /api/geotiff/upload are returned,
+    so a client cannot make titiler read arbitrary files from disk.
+    """
+    entry = _geotiffs.get(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Unknown GeoTIFF id.")
+    return JSONResponse({"url": str(entry.path)})
+
+
 @app.get("/api/state")
 def get_full_state() -> JSONResponse:
     """One-shot snapshot of the whole editing session.
