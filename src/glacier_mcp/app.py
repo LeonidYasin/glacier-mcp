@@ -157,6 +157,41 @@ def get_polygons() -> JSONResponse:
     return JSONResponse(payload)
 
 
+@app.get("/api/state")
+def get_full_state() -> JSONResponse:
+    """One-shot snapshot of the whole editing session.
+
+    The frontend calls this on boot so that after a page reload it can
+    rebuild everything it needs without the user re-uploading the raster:
+
+      * the *current* GeoTIFF (id + CRS + bounds) so the map projection and
+        the raster layer are restored — otherwise polygon coordinates in
+        the raster's CRS would be interpreted as Web Mercator and land near
+        the pole;
+      * the polygon collection in that same CRS;
+      * undo/redo availability.
+
+    ``geotiff`` is ``null`` when no raster has been uploaded in this server
+    process yet. The frontend falls back to an empty EPSG:3857 view then.
+    """
+    state = get_state()
+
+    geotiff_payload: dict | None = None
+    if _current_geotiff_id is not None:
+        entry = _geotiffs.get(_current_geotiff_id)
+        if entry is not None:
+            geotiff_payload = dict(entry.meta)
+
+    return JSONResponse(
+        {
+            "geotiff": geotiff_payload,
+            "polygons": state.to_geojson(),
+            "can_undo": state.can_undo(),
+            "can_redo": state.can_redo(),
+        }
+    )
+
+
 @app.post("/api/polygons")
 async def add_or_replace_polygon(payload: dict) -> JSONResponse:
     """Add a new polygon or replace an existing one.
