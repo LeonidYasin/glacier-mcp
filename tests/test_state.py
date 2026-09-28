@@ -20,13 +20,32 @@ def _square(offset: float = 0.0) -> Polygon:
     )
 
 
-def test_initial_state() -> None:
+def test_initial_state_with_explicit_polygon() -> None:
+    """Passing a polygon explicitly seeds the collection with it."""
     s = PolygonState(_square())
     assert s.polygon.equals(_square())
     assert len(s) == 1
     assert s.names == ["glacier_1"]
     assert s.can_undo() is False
     assert s.can_redo() is False
+
+
+def test_initial_state_without_polygon_is_empty() -> None:
+    """A fresh PolygonState() must NOT invent a default glacier.
+
+    Regression: the earlier version seeded a 1x1 square at the origin,
+    which showed up as a phantom glacier on first run and could not be
+    removed because it was the last one.
+    """
+    s = PolygonState()
+    assert len(s) == 0
+    assert s.names == []
+    assert s.polygons == []
+    assert s.can_undo() is False
+    assert s.can_redo() is False
+    # .polygon must raise a clear error, not IndexError.
+    with pytest.raises(StateError):
+        _ = s.polygon
 
 
 def test_move_vertex_pushes_undo() -> None:
