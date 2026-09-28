@@ -723,20 +723,24 @@ function applyGeoTiffToMap(meta) {
 
   if (rasterLayer) map.removeLayer(rasterLayer);
   rasterLayer = new ol.layer.Tile({
+    // Clip the layer to the raster's own extent so OpenLayers never asks
+    // for tiles outside the raster. Without this, panning around the edges
+    // makes OL request tiles the backend returns as fully transparent, but
+    // which OL still paints over the black canvas — visible as black bars.
+    extent,
     source: new ol.source.TileImage({
       projection,
       tileGrid: rasterTileGrid,
       crossOrigin: "anonymous",
       tileUrlFunction: (tileCoord) => {
-        const [z, x, tileYOL] = tileCoord;
-        // The OL tile grid grows Y upwards from its origin; our backend
-        // (and rasterio) use top-down row indices, so flip within this
-        // zoom level to keep the two grids aligned.
-        const grid = Math.pow(2, z);
-        const tileYRaster = grid - 1 - tileYOL;
+        const [z, x, tileY] = tileCoord;
+        // Both our rasterTileGrid (origin at raster top-left) and the
+        // backend endpoint count rows downward from the top-left corner:
+        // tile (0,0) is the upper-left tile, y grows down. No Y flip is
+        // needed — the OL tile grid already matches rasterio's row order.
         return (
           `${BACKEND}/api/geotiff/${meta.id}/tile/` +
-          `${z}/${x}/${tileYRaster}.png`
+          `${z}/${x}/${tileY}.png`
         );
       },
     }),
