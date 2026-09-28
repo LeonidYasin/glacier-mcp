@@ -731,35 +731,55 @@ function applyGeoTiffToMap(meta) {
   for (let z = 0; z <= MAX_Z; z++) {
     resolutions.push(maxSpan / (Math.pow(2, z) * TILE_SIZE));
   }
-  const rasterTileGrid = new ol.tilegrid.TileGrid({
-    origin: [extent[0], extent[3]],
-    resolutions,
-    tileSize: TILE_SIZE,
-  });
-
+  // ---- Raster layer: ol.source.ImageCanvas (WMS-style viewport) --------
+  //
+  // We deliberately do NOT use ol.source.TileImage / tileGrid here. Tiles
+  // are the right tool for planetary-scale rasters where you need to stream
+  // megabytes of data progressively. For a single Sentinel-2 scene
+  // (thousands of pixels per side) they are overkill and they introduce
+  // visible artefacts: the OL tile grid forces the image to be cut into
+  // 256x256 tiles, and every tile boundary shows up as a seam because each
+  // tile is resampled independently on the server.
+  //
+  // Instead we use ol.source.ImageCanvas, which calls our `imageFunction`
+  // on every pan/zoom. The function receives the current viewport extent
+  // (in the raster's own CRS) and the size of the map in screen pixels,
+  // and returns a URL to a single PNG that covers exactly that bbox. The
+  // backend `/viewport` endpoint cuts the raster to that bbox and returns
+  // one image — no tiles, no grid, no seams.
   if (rasterLayer) map.removeLayer(rasterLayer);
-  rasterLayer = new ol.layer.Tile({
-    // Clip the layer to the raster's own extent so OpenLayers never asks
-    // for tiles outside the raster. Without this, panning around the edges
-    // makes OL request tiles the backend returns as fully transparent, but
-    // which OL still paints over the black canvas — visible as black bars.
+  const rasterImageSource = new ol.source.ImageCanvas({
+    projection,
+    // Don't request a new image on every tiny pan — 0 means OL handles it.
+    ratio: 1,
+    // The key: OL calls this whenever it needs an image for the current
+    // viewport. We compute the bbox and the exact pixel size.
+    imageFunction: (imageExtent, _resolution, _pixelRatio, imageSize) => {
+      const [ex0, ey0, ex1, ey1] = imageExtent;
+      // imageSize is [width, height] in CSS pixels that the image will
+      // occupy on screen. Cap to a sane maximum so a giant monitor cannot
+      // make the backend produce a 10000x10000 PNG.
+      const w = Math.max(1, Math.min(Math.round(imageSize[0]), 4096));
+      const h = Math.max(1, Math.min(Math.round(imageSize[1]), 4096));
+      const url =
+        `${BACKEND}/api/geotiff/${meta.id}/viewport` +
+        `?minX=${ex0}&minY=${ey0}&maxX=${ex1}&maxY=${ey1}` +
+        `&width=${w}&height=${h}`;
+      // OL expects a CanvasImageSource (HTMLImageElement, ImageBitmap,
+      // HTMLCanvasElement, OffscreenCanvas). Returning an HTMLImageElement
+      // is the simplest path — the browser fetches the URL and fires load.
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = url;
+      return img;
+    },
+  });
+  rasterLayer = new ol.layer.Image({
+    // Clip the layer to the raster's own extent so OL never asks for the
+    // raster beyond its bounds — the backend already returns transparent
+    // pixels there, but clipping avoids pointless requests.
     extent,
-    source: new ol.source.TileImage({
-      projection,
-      tileGrid: rasterTileGrid,
-      crossOrigin: "anonymous",
-      tileUrlFunction: (tileCoord) => {
-        const [z, x, tileY] = tileCoord;
-        // Both our rasterTileGrid (origin at raster top-left) and the
-        // backend endpoint count rows downward from the top-left corner:
-        // tile (0,0) is the upper-left tile, y grows down. No Y flip is
-        // needed — the OL tile grid already matches rasterio's row order.
-        return (
-          `${BACKEND}/api/geotiff/${meta.id}/tile/` +
-          `${z}/${x}/${tileY}.png`
-        );
-      },
-    }),
+    source: rasterImageSource,
   });
   map.getLayers().insertAt(0, rasterLayer);
 
