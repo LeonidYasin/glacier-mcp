@@ -705,6 +705,133 @@ def geotiff_viewport(
     )
 
 
+# ---- Google Earth Engine OAuth --------------------------------------------
+#
+# In-memory session store. Single-user localhost app: one entry per
+# session cookie is plenty, and we deliberately do NOT persist OAuth
+# tokens to disk — a restart logs everyone out, which is the right
+# default for something holding a Google refresh token.
+#
+# The flow, from the browser's point of view:
+#
+#   1. UI clicks "Sign in with Google" -> GET /api/gee/auth/start
+#   2. We 302 the browser to google.com with our client_id + a random
+#      `state` (CSRF guard, stored in a short-lived cookie).
+#   3. The user signs in *as themselves* on Google and approves access.
+#   4. Google redirects back to /api/gee/auth/callback?code=...&state=...
+#   5. We verify `state`, exchange `code` for a refresh token, stash the
+#      credentials in `_gee_sessions`, and redirect back to the map.
+#
+# The client_id / client_secret are the *application's* identity with
+# Google (see src/glacier_mcp/gee.py for details); they are read from the
+# environment and never touch the repository.
+_gee_sessions: dict[str, gee.UserCredentials] = {}
+
+
+def _gee_session_id(request: Request) -> str | None:
+    """Return the caller's session id from the cookie, or None."""
+    return request.cookies.get("glacier_session")
+
+
+def get_gee_user(request: Request) -> gee.UserCredentials | None:
+    """Resolve the currently signed-in Earth Engine user, if any.
+
+    Exported for ``server.py`` so the MCP tools can look up the session
+    that the browser established without duplicating the cookie logic.
+    """
+    sid = _gee_session_id(request)
+    if not sid:
+        return None
+    return _gee_sessions.get(sid)
+
+
+@app.get("/api/gee/auth/start")
+def gee_auth_start() -> RedirectResponse:
+    """Kick off the OAuth dance: redirect the browser to Google."""
+    state = secrets.token_urlsafe(24)
+    try:
+        url = gee.build_auth_url(state=state)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    response = RedirectResponse(url=url)
+    response.set_cookie(
+        "glacier_oauth_state",
+        state,
+        httponly=True,
+        samesite="lax",
+        max_age=600,  # 10 minutes to complete the consent screen
+    )
+    return response
+
+
+@app.get("/api/gee/auth/callback")
+def gee_auth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Google redirects here after the user approves (or denies) access."""
+    if error:
+        raise HTTPException(status_code=400, detail=f"Google returned error: {error}")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing 'code' from Google.")
+    expected = request.cookies.get("glacier_oauth_state")
+    if not expected or expected != state:
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth 'state' mismatch — the sign-in link expired. Try again.",
+        )
+    try:
+        user = gee.exchange_code(code)
+    except Exception as exc:  # noqa: BLE001 — surface any exchange failure
+        raise HTTPException(
+            status_code=400, detail=f"Token exchange failed: {exc}"
+        ) from exc
+
+    session_id = request.cookies.get("glacier_session") or secrets.token_urlsafe(24)
+    _gee_sessions[session_id] = user
+    # Warm up Earth Engine now so the very first MCP call is not slow.
+    try:
+        gee.init_ee(user)
+    except Exception:  # noqa: BLE001 — surfaced later via MCP tool errors
+        pass
+
+    response = RedirectResponse(url="/")
+    response.set_cookie(
+        "glacier_session",
+        session_id,
+        httponly=True,
+        samesite="lax",
+        max_age=86400,  # 24 hours
+    )
+    response.delete_cookie("glacier_oauth_state")
+    return response
+
+
+@app.get("/api/gee/auth/status")
+def gee_auth_status(request: Request) -> JSONResponse:
+    """Whether anyone is signed in, and as whom (best-effort)."""
+    user = get_gee_user(request)
+    return JSONResponse(
+        {
+            "logged_in": user is not None,
+            "email": user.email if user else None,
+        }
+    )
+
+
+@app.post("/api/gee/auth/logout")
+def gee_auth_logout(request: Request) -> JSONResponse:
+    """Forget the stored credentials for this session."""
+    sid = _gee_session_id(request)
+    if sid:
+        _gee_sessions.pop(sid, None)
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("glacier_session")
+    return response
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await hub.connect(ws)
