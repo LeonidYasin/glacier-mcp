@@ -503,9 +503,12 @@ function applyGeoTiffToMap(meta) {
 // ---- Buttons --------------------------------------------------------------
 
 function wireButtons() {
+  const drawBtn = document.getElementById("btn-draw");
   const undoBtn = document.getElementById("btn-undo");
   const redoBtn = document.getElementById("btn-redo");
   const exportBtn = document.getElementById("btn-export");
+  // "Draw new polygon" toggles draw mode on/off. Clicking again cancels.
+  if (drawBtn) drawBtn.addEventListener("click", () => setDrawMode(!drawMode));
   if (undoBtn) undoBtn.addEventListener("click", sendUndo);
   if (redoBtn) redoBtn.addEventListener("click", sendRedo);
   if (exportBtn) exportBtn.addEventListener("click", exportShapefile);
