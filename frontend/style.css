@@ -115,4 +115,7 @@ body {
   position: absolute;
   inset: 40px 0 0 0;
   background: #111;
+  /* Shift+drag must pan the map, not select text in the browser. */
+  user-select: none;
+  -webkit-user-select: none;
 }
