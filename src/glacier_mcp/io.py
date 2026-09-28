@@ -293,16 +293,23 @@ def render_tile_png(
         img = Image.fromarray(gray, mode="L").convert("RGB")
 
     # Resample the read window to exactly tile_size x tile_size.
-    if (read_w, read_h) != (tile_size, tile_size):
-        img = img.resize((tile_size, tile_size), Image.BILINEAR)
-
-    # Place the resized content into the correct corner of a transparent
-    # tile_size x tile_size canvas, so partial edge tiles do not smear.
+    # Place the read window into the correct sub-rectangle of a
+    # transparent tile_size x tile_size canvas, so that:
+    #   * a tile cut from the middle of the raster fills the whole
+    #     tile_size x tile_size square (paste_frac = 0, content_frac = 1);
+    #   * a tile that overlaps the raster only partly is pasted into the
+    #     matching sub-rectangle, with the rest left transparent.
+    #
+    # Crucially we resize ONLY ONCE — from the read window (read_w x
+    # read_h) directly to the target sub-rectangle (content_w x
+    # content_h). The previous version first stretched the window to
+    # 256x256 and then resized AGAIN, which distorted aspect ratio and
+    # produced visible seams between adjacent tiles.
     canvas = Image.new("RGBA", (tile_size, tile_size), (0, 0, 0, 0))
-    paste_x = round((src_col - col_off) * tile_size / win_w)
-    paste_y = round((src_row - row_off) * tile_size / win_h)
-    content_w = round((src_col_end - src_col) * tile_size / win_w)
-    content_h = round((src_row_end - src_row) * tile_size / win_h)
+    paste_x = round(paste_x_frac * tile_size)
+    paste_y = round(paste_y_frac * tile_size)
+    content_w = round(content_w_frac * tile_size)
+    content_h = round(content_h_frac * tile_size)
     # Final guard: if the tile touches the raster only by a sub-pixel sliver,
     # content_w/content_h can come out as 0. Paste a single transparent pixel
     # and skip — the tile is effectively empty.
