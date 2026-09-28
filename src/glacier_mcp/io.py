@@ -264,10 +264,10 @@ def render_tile_png(
     # Place the resized content into the correct corner of a transparent
     # tile_size x tile_size canvas, so partial edge tiles do not smear.
     canvas = Image.new("RGBA", (tile_size, tile_size), (0, 0, 0, 0))
-    paste_x = int(round((src_col - col_off) * tile_size / win_w))
-    paste_y = int(round((src_row - row_off) * tile_size / win_h))
-    content_w = int(round((src_col_end - src_col) * tile_size / win_w))
-    content_h = int(round((src_row_end - src_row) * tile_size / win_h))
+    paste_x = round((src_col - col_off) * tile_size / win_w)
+    paste_y = round((src_row - row_off) * tile_size / win_h)
+    content_w = round((src_col_end - src_col) * tile_size / win_w)
+    content_h = round((src_row_end - src_row) * tile_size / win_h)
     # Final guard: if the tile touches the raster only by a sub-pixel sliver,
     # content_w/content_h can come out as 0. Paste a single transparent pixel
     # and skip — the tile is effectively empty.
