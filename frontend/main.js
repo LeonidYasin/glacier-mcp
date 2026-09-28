@@ -1327,6 +1327,54 @@ function initGeeAuth() {
 
 let geeBasemapLayer = null;
 
+// Server-driven counterpart to applyGeeBasemap(): the agent resolved the
+// XYZ tile URL on the backend (gee_get_basemap MCP tool) and pushed it
+// over the WebSocket. We do not re-request anything — we just wrap the
+// URL in ol.source.XYZ and recenter on the scene bbox if one was sent.
+function applyGeeBasemapFromServer(msg) {
+  if (!msg || !msg.tile_url) return;
+  const statusEl = document.getElementById("status");
+
+  // Replace any previous GEE basemap — one scene at a time.
+  clearGeeBasemap();
+
+  const source = new ol.source.XYZ({
+    url: msg.tile_url,
+    crossOrigin: "anonymous",
+    attributions: "Sentinel-2 · Google Earth Engine",
+  });
+  geeBasemapLayer = new ol.layer.Tile({
+    source,
+    opacity: 1,
+    zIndex: -1,
+  });
+  map.addLayer(geeBasemapLayer);
+
+  // Recenter so the user sees the scene rather than an empty ocean.
+  // bbox is [west, south, east, north] in EPSG:4326.
+  if (Array.isArray(msg.bbox) && msg.bbox.length === 4 && map) {
+    const [west, south, east, north] = msg.bbox;
+    const extent = ol.proj.transformExtent(
+      [west, south, east, north],
+      "EPSG:4326",
+      "EPSG:3857"
+    );
+    map.getView().fit(extent, { padding: [60, 60, 60, 60], duration: 350 });
+  }
+
+  // Reflect the swap in the toolbar controls, if they exist.
+  const sceneInput = document.getElementById("gee-basemap-scene");
+  if (sceneInput && msg.scene_id) sceneInput.value = msg.scene_id;
+  const presetSelect = document.getElementById("gee-basemap-preset");
+  if (presetSelect && msg.preset) presetSelect.value = msg.preset;
+  const clearBtn = document.getElementById("btn-gee-basemap-clear");
+  if (clearBtn) clearBtn.hidden = false;
+
+  if (statusEl) {
+    statusEl.textContent = `basemap: ${msg.preset || "layer"} (${msg.scene_id || ""})`;
+  }
+}
+
 async function loadGeeBasemapPresets() {
   const select = document.getElementById("gee-basemap-preset");
   if (!select) return;
