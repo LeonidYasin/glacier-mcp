@@ -233,7 +233,7 @@ async def capture_map(full_viewport: bool = False) -> dict:
         )
     except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise ValueError(
             "Timed out waiting for the browser. "
             "Is the glacier-mcp UI tab still open and responsive?"
