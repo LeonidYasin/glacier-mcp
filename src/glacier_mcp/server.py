@@ -512,11 +512,17 @@ def gee_get_basemap(
     vis_params: raw override — {bands, min, max, gamma, palette, index}.
               Use this for a custom band combination the presets do not
               cover (e.g. B5/B4/B3 red-edge false colour).
-    bbox:     optional [west, south, east, north] in EPSG:4326.
+    bbox:     optional [west, south, east, north] in EPSG:4326. When
+              given, it is also forwarded to the browser so the map can
+              recenter on the scene.
     clip:     when True and bbox is given, clip the layer to the bbox.
+    push:     when True (default) the resolved layer is also pushed to
+              every open map tab over the WebSocket, so the image
+              appears without the user clicking anything.
 
     Returns {map_id, token, tile_url, preset, scene_id, band_names,
-    index, expires_in}. The map id lives ~24 h; call again to refresh.
+    index, expires_in, pushed_to}. The map id lives ~24 h; call again to
+    refresh.
     """
     from . import gee
 
@@ -525,13 +531,53 @@ def gee_get_basemap(
     except RuntimeError as exc:
         raise ValueError(str(exc)) from exc
 
-    return gee.get_basemap(
+    result = gee.get_basemap(
         scene_id=scene_id,
         preset=preset,
         vis_params=vis_params,
         bbox=bbox,
         clip=clip,
     )
+
+    # Hand the layer to the browser so it actually shows up on the map.
+    # Lazy import: app.py pulls in titiler/rasterio, which we do not want
+    # to import when the MCP server runs in a slim context.
+    if push:
+        try:
+            from .app import hub
+
+            pushed = await_hub_push = hub.push_gee_basemap  # noqa: F841
+            import asyncio as _asyncio
+
+            payload = {
+                "tile_url": result["tile_url"],
+                "scene_id": result["scene_id"],
+                "preset": result["preset"],
+                "bbox": bbox,
+            }
+            # The MCP tool runs inside the FastAPI event loop (both servers
+            # share one process), so we can schedule the broadcast on the
+            # running loop.
+            loop = _asyncio.get_running_loop()
+            n = loop.run_until_complete(hub.push_gee_basemap(payload)) if False else None
+            # Simpler: the caller is sync, so create a task if a loop is
+            # running; otherwise skip the push.
+            try:
+                running = _asyncio.get_running_loop()
+            except RuntimeError:
+                running = None
+            if running is not None:
+                running.create_task(hub.push_gee_basemap(payload))
+                result["pushed_to"] = "scheduled"
+            else:
+                result["pushed_to"] = 0
+        except Exception as exc:  # noqa: BLE001 — push is best-effort
+            result["push_error"] = str(exc)
+            result["pushed_to"] = 0
+    else:
+        result["pushed_to"] = "disabled"
+
+    return result
 
 
 def run(host: str = "127.0.0.1", port: int = 8766) -> None:
