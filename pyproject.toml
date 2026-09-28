@@ -53,6 +53,32 @@ where = ["src"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "RUF",  # ruff-specific
+    "ANN",  # flake8-annotations
+    "SLF",  # flake8-self (private member access)
+]
+ignore = [
+    "ANN101",  # missing self annotation - not applicable
+    "ANN102",  # missing cls annotation - not applicable
+    "ANN201",  # missing return type for public function - too strict for tests
+    "ANN202",  # missing return type for private function
+    "ANN204",  # missing return type for __init__
+    "ANN401",  # dynamically typed expressions (Any) - we use it deliberately
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "ANN001",  # pytest fixtures often untyped
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
