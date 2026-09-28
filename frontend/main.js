@@ -662,12 +662,46 @@ function applyGeoTiffToMap(meta) {
   // because their coordinates would be meaningless in the new projection.
   const crsChanged = crsCode !== currentCrsCode;
 
+  // Build a tile grid in the raster's OWN CRS. z=0 is a single tile for
+  // the whole raster; z=N is 2^N x 2^N tiles. The origin is the raster's
+  // top-left corner (matching rasterio's row direction). The backend cuts
+  // every tile from the *source* raster with rasterio.Windows — so max zoom
+  // gives true pixel resolution, not a stretched preview.
+  const width = Math.abs(extent[2] - extent[0]);
+  const height = Math.abs(extent[3] - extent[1]);
+  const maxSpan = Math.max(width, height) || 1;
+  const TILE_SIZE = 256;
+  const resolutions = [];
+  const MAX_Z = 20;
+  for (let z = 0; z <= MAX_Z; z++) {
+    // Resolution = CRS units per screen pixel at zoom z. One tile covers
+    // TILE_SIZE * resolution CRS units.
+    resolutions.push(maxSpan / (Math.pow(2, z) * TILE_SIZE));
+  }
+  const tileGrid = new ol.tilegrid.TileGrid({
+    origin: [extent[0], extent[3]],
+    resolutions,
+    tileSize: TILE_SIZE,
+  });
+
   if (rasterLayer) map.removeLayer(rasterLayer);
-  rasterLayer = new ol.layer.Image({
-    source: new ol.source.ImageStatic({
-      url: `${BACKEND}/api/geotiff/${meta.id}/preview.png`,
-      imageExtent: extent,
+  rasterLayer = new ol.layer.Tile({
+    source: new ol.source.TileImage({
       projection,
+      tileGrid,
+      tileUrlFunction: (coord) => {
+        const z = coord[0];
+        const tileX = coord[1];
+        const tileYOL = coord[2];
+        // OpenLayers' Y axis grows upwards from the origin; our backend
+        // uses rasterio's top-down row index. Flip Y within this zoom.
+        const grid = Math.pow(2, z);
+        const tileYRaster = grid - 1 - tileYOL;
+        return (
+          `${BACKEND}/api/geotiff/${meta.id}/tile/` +
+          `${z}/${tileX}/${tileYRaster}.png`
+        );
+      },
     }),
   });
   map.getLayers().insertAt(0, rasterLayer);
