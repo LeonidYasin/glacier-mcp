@@ -80,8 +80,8 @@ def _safe_tile(self, *args, **kwargs):
     except _TileOutsideBounds:
         # A fully-transparent tile: one band of zeros + an all-zero mask.
         size = int(kwargs.get("tile_size", 256) or 256)
-        blank = _np.zeros((1, size, size), dtype=_np.uint8)
-        blank_mask = _np.zeros((size, size), dtype=_np.uint8)
+        blank = np.zeros((1, size, size), dtype=np.uint8)
+        blank_mask = np.zeros((size, size), dtype=np.uint8)
         return _ImageData(blank, blank_mask, assets=["outside"])
 
 
