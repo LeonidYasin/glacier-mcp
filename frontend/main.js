@@ -109,6 +109,46 @@ function styleForFeature(feature) {
   });
 }
 
+// ---- Draw/Select mode -----------------------------------------------------
+//
+// The classic GIS pattern: Select is the default, Draw is a temporary mode
+// you enter to add a new polygon and leave immediately after. Keeping Draw
+// always-on made every click start a new polygon — that is the bug the user
+// reported ("click selects nothing, starts drawing instead").
+
+let drawMode = false;
+
+function setDrawMode(on) {
+  drawMode = on;
+  if (draw) draw.setActive(on);
+  const btn = document.getElementById("btn-draw");
+  if (btn) {
+    btn.classList.toggle("btn-active", on);
+    btn.textContent = on ? "Drawing... (Esc to cancel)" : "Draw new polygon";
+  }
+  if (!on && draw) draw.abortDrawing();
+  setStatus(
+    on
+      ? "drawing — click to add vertices, double-click to finish"
+      : "select mode — click a polygon to select it"
+  );
+}
+
+// Local sanity check: a polygon must have >=3 vertices and non-zero area.
+// The backend refuses empty/degenerate rings with 400, which used to leave
+// a ghost feature stuck on the map and confuse the user.
+function isValidDrawnPolygon(geom) {
+  if (!geom || geom.getType() !== "Polygon") return false;
+  const ring = geom.getCoordinates()[0];
+  if (!ring || ring.length < 3) return false;
+  // Shoelace area in CRS units — degenerate if ~0.
+  let area2 = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    area2 += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+  }
+  return Math.abs(area2 / 2) > 1e-9;
+}
+
 // ---- Initialisation -------------------------------------------------------
 
 function initMap() {
