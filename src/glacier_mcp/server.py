@@ -494,6 +494,7 @@ def gee_get_basemap(
     vis_params: dict | None = None,
     bbox: list[float] | None = None,
     clip: bool = False,
+    push: bool = True,
 ) -> dict:
     """Return an XYZ tile URL for one Sentinel-2 scene (map basemap).
 
