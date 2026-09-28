@@ -716,8 +716,17 @@ function applyGeoTiffToMap(meta) {
   // raster; `z=N` is 2**N by 2**N tiles. The origin is the raster's
   // top-left corner, matching rasterio's row direction (rows grow down).
   const TILE_SIZE = 256;
-  const MAX_Z = 20;
-  const maxSpan = Math.max(width, height) || 1;
+  // The number of zoom levels is bounded by the raster's own size, not by
+  // an arbitrary constant. Each extra level doubles the linear pixel
+  // stretch factor: at z the average source block for a tile is
+  // (maxPx / 2^z) pixels wide. Once that falls below ~TILE_SIZE pixels
+  // the tiles are pure upscaling — nothing to gain, and the bilinear
+  // resampling begins to show visible seams between neighbouring tiles.
+  // Restricting to the level where 1 tile pixel ≈ 1 source pixel keeps
+  // the raster sharp and avoids pointless network traffic.
+  const maxPx = Math.max(width, height) || 1;
+  const MAX_Z = Math.max(0, Math.ceil(Math.log2(maxPx / TILE_SIZE)));
+  const maxSpan = maxPx;
   const resolutions = [];
   for (let z = 0; z <= MAX_Z; z++) {
     resolutions.push(maxSpan / (Math.pow(2, z) * TILE_SIZE));
