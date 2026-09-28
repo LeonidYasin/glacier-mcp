@@ -782,15 +782,30 @@ function applyGeoTiffToMap(meta) {
     constrainResolution: false,
   });
   // `view.fit()` recomputes the resolution from the viewport size, ignoring
-  // the `maxResolution` we set above (fit only respects it as an upper
-  // clamp on the FINAL resolution, and only if the fit would zoom out
-  // further than that — which is often not the case here). Re-apply the
-  // clamp explicitly: if the fit landed coarser than z=0, snap back to
-  // z=0 and re-centre. This is the actual fix for the tiled-mosaic look.
-  if (view.getResolution() > resolutions[0]) {
-    view.setResolution(resolutions[0]);
-    view.setCenter([(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2]);
-  }
+  // the `maxResolution` we set above. Explicitly snap the view back to z=0
+  // (coarsest tile) and the raster's centre. This is the actual fix for
+  // the tiled-mosaic look: without this clamp OL ends up with a resolution
+  // coarser than any tile level, so every tile request resolves to z=0 and
+  // the SAME z=0 tile is stretched across the whole viewport.
+  //
+  // We do the clamp unconditionally (not with `if (r > res[0])`) and log
+  // the values so we can verify what OL is actually doing.
+  const targetResolution = resolutions[0];
+  const rasterCenter = [
+    (extent[0] + extent[2]) / 2,
+    (extent[1] + extent[3]) / 2,
+  ];
+  // eslint-disable-next-line no-console
+  console.log("[glacier] fit produced:", {
+    resolution: view.getResolution(),
+    center: view.getCenter(),
+    targetResolution,
+    rasterCenter,
+    extent,
+    resolutionsLen: resolutions.length,
+  });
+  view.setResolution(targetResolution);
+  view.setCenter(rasterCenter);
 
   // Populate the debug HUD with this raster's identity and metadata. The
   // view-related rows (zoom / resolution / center / mouse) update on their
