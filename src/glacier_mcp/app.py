@@ -45,6 +45,20 @@ FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 app = FastAPI(title="glacier-mcp")
 
 
+# Disable browser caching for /static/* during development. main.js and
+# style.css change often; without this the browser holds a stale copy and
+# the UI keeps using an old URL schema (e.g. tile requests without &crs=),
+# which is extremely confusing. no-store forces a fresh fetch every reload.
+@app.middleware("http")
+async def _no_cache_static(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 # ---- COG tile server (titiler) -------------------------------------------
 #
 # We do NOT hand-roll raster tiling any more. titiler is the production COG
