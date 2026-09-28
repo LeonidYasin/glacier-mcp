@@ -22,6 +22,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+# titiler: production COG tile server used by NASA Worldview / FIRMS. It
+# reads the source GeoTIFF through rasterio, picks the right overview for
+# the requested zoom, resamples to 256x256, and returns a PNG. Handles
+# non-square rasters, arbitrary CRS, mosaics, and multi-layer overlays —
+# all the pieces we tried to build by hand.
+from titiler.core.factory import TilerFactory as _CogTilerFactory
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
