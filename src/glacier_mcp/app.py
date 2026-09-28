@@ -729,38 +729,51 @@ def geotiff_viewport(
 # environment and never touch the repository.
 _GEE_STATE_TTL_S = 600  # 10 minutes to complete the consent screen
 
-#: request state (str) -> monotonic timestamp (float, seconds).
-_gee_states: dict[str, float] = {}
+#: request state (str) -> (monotonic timestamp, live Flow object).
+#:
+#: We keep the Flow here because google-auth-oauthlib's Flow uses PKCE:
+#: the code_verifier lives inside the Flow that created the
+#: authorization_url, and finish_auth_flow must reuse that same Flow on
+#: the callback. Rebuilding a fresh Flow yields
+#: '(invalid_grant) Missing code verifier' from Google.
+_gee_states: dict[str, tuple[float, Any]] = {}
 
 #: session id (str) -> signed-in user. Cleared on logout / process exit.
 _gee_sessions: dict[str, gee.UserCredentials] = {}
 
 
-def _issue_state() -> str:
-    """Generate and remember a fresh CSRF state for one OAuth round-trip."""
+def _issue_state(flow: Any) -> str:
+    """Register a Flow under a fresh random state. Returns the state.
+
+    The Flow object is stored alongside a monotonic timestamp so we can
+    expire abandoned consent attempts. See _consume_state.
+    """
     import time as _time
 
     now = _time.monotonic()
     # Sweep expired entries first so the dict cannot grow unbounded if a
     # user abandons the consent screen repeatedly.
-    for k, ts in list(_gee_states.items()):
+    for k, (ts, _f) in list(_gee_states.items()):
         if now - ts > _GEE_STATE_TTL_S:
             _gee_states.pop(k, None)
     state = secrets.token_urlsafe(24)
-    _gee_states[state] = now
+    _gee_states[state] = (now, flow)
     return state
 
 
-def _consume_state(state: str | None) -> bool:
-    """Return True iff `state` is known and not expired; pop it either way."""
+def _consume_state(state: str | None) -> Any | None:
+    """Return the Flow registered under `state`, or None; pop either way."""
     import time as _time
 
     if not state:
-        return False
-    ts = _gee_states.pop(state, None)
-    if ts is None:
-        return False
-    return (_time.monotonic() - ts) <= _GEE_STATE_TTL_S
+        return None
+    item = _gee_states.pop(state, None)
+    if item is None:
+        return None
+    ts, flow = item
+    if (_time.monotonic() - ts) > _GEE_STATE_TTL_S:
+        return None
+    return flow
 
 
 def _gee_session_id(request: Request) -> str | None:
