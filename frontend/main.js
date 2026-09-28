@@ -41,6 +41,12 @@ function connectWebSocket() {
     const msg = JSON.parse(event.data);
     if (msg.type === "polygons") {
       applyCollectionFromServer(msg);
+    } else if (msg.type === "gee_basemap") {
+      // Server (agent via the gee_get_basemap MCP tool) resolved an XYZ
+      // tile URL for a Sentinel-2 scene and pushed it here. Swap the
+      // layer and, when the server sent a bbox, recenter the view so the
+      // user actually sees the scene instead of an empty ocean.
+      applyGeeBasemapFromServer(msg);
     } else if (msg.type === "capture_map_request") {
       // Server (agent via MCP tool) asks us to screenshot the map.
       // Reply with the same request_id so the server can match it.
