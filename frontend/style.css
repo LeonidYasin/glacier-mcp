@@ -60,6 +60,9 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* The text is truncated by design; hint to the user that hovering
+     reveals the full value via the title attribute set in JS. */
+  cursor: help;
 }
 
 #status {
