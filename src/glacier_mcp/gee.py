@@ -446,7 +446,7 @@ def rgb_thumbnail_url(
 
     _require_ee()
     region = _bbox_to_ee_geometry(bbox)
-    image = ee.Image(S2_COLLECTION + "/" + scene_id).clip(region)
+    image = ee.Image(S2_COLLECTION + "/" + _resolve_scene_id(scene_id)).clip(region)
     vis = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000, "gamma": 1.4}
     return image.getThumbURL(
         {
