@@ -13,11 +13,30 @@ Three new tools manage the collection itself: ``add_polygon``,
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from .state import PolygonState
 
 # Single shared instance for the process.
 _state = PolygonState()
+
+# The MCP Python SDK turns on DNS-rebinding protection by default: any
+# request whose `Origin` header is not in `allowed_origins` is rejected
+# with 403. Browsers always send an `Origin`, and a Chrome extension
+# sends `chrome-extension://<id>` — which is NOT in the SDK's default
+# localhost-only list. That is why the DeepSeek++ plugin (a Chrome
+# extension acting as an MCP client over Streamable HTTP) hit 403 while
+# our Flask-based mcp-server (no Origin check at all) worked fine.
+#
+# We keep the protection ON but explicitly allow-list the *specific*
+# extension ID instead of `chrome-extension://*`: a wildcard would let
+# any Chrome extension the user happens to install reach this server.
+_MCP_ALLOWED_ORIGINS = [
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    # DeepSeek++ Chrome extension (MCP Streamable HTTP client).
+    "chrome-extension://kdmpkkahkhdmdhfkdihkopikgcocbpb",
+]
 
 # ``stateless_http=True`` lets clients connect/reconnect without sticky
 # sessions, which is what the OpenLayers UI + agent pair expects.
@@ -25,6 +44,9 @@ mcp = FastMCP(
     "glacier-mcp",
     stateless_http=True,
     json_response=True,
+    transport_security=TransportSecuritySettings(
+        allowed_origins=_MCP_ALLOWED_ORIGINS,
+    ),
 )
 
 
