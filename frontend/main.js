@@ -318,6 +318,78 @@ function initMap() {
 
 // ---- Server round trips ---------------------------------------------------
 
+// ---- Draggable scale line ------------------------------------------------
+//
+// OL's ScaleLine control renders as a <div class="ol-scale-line"> that CSS
+// anchors to the bottom-centre of the map (flush with the polygon panel).
+// We let the user pick it up and drop it anywhere over the map, so it can be
+// laid next to a feature to read off a linear size — the gesture QGIS /
+// ArcGIS users expect.
+//
+// Position is deliberately NOT persisted: reloading the page drops the
+// inline left/bottom styles and the bar snaps back to the CSS default. This
+// keeps the default predictable and avoids surprising the user after F5.
+function makeScaleLineDraggable() {
+  if (!map) return;
+  const viewport = map.getViewport();
+  const el = viewport.querySelector(".ol-scale-line");
+  if (!el) return;
+
+  let dragging = false;
+  let grabDx = 0; // cursor offset inside the element, x
+  let grabDy = 0; // cursor offset inside the element, y
+
+  const onPointerDown = (evt) => {
+    if (evt.button !== 0) return; // left button only
+    evt.preventDefault();
+    dragging = true;
+    const rect = el.getBoundingClientRect();
+    grabDx = evt.clientX - rect.left;
+    grabDy = evt.clientY - rect.top;
+    el.classList.add("ol-scale-line-dragging");
+    try {
+      el.setPointerCapture(evt.pointerId);
+    } catch (_) {
+      /* pointer capture is best-effort */
+    }
+  };
+
+  const onPointerMove = (evt) => {
+    if (!dragging) return;
+    const vpRect = viewport.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    // Position of the element's top-left corner relative to the map.
+    let leftPx = evt.clientX - grabDx - vpRect.left;
+    let topPx = evt.clientY - grabDy - vpRect.top;
+    // Clamp so the whole bar stays inside the map viewport.
+    const maxLeft = Math.max(0, vpRect.width - elRect.width);
+    const maxTop = Math.max(0, vpRect.height - elRect.height);
+    leftPx = Math.max(0, Math.min(leftPx, maxLeft));
+    topPx = Math.max(0, Math.min(topPx, maxTop));
+    // CSS positions the bar via `bottom`; convert from top-relative pixels.
+    const bottomPx = vpRect.height - topPx - elRect.height;
+    el.style.left = leftPx + "px";
+    el.style.bottom = bottomPx + "px";
+    el.style.transform = "none";
+  };
+
+  const endDrag = (evt) => {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("ol-scale-line-dragging");
+    try {
+      el.releasePointerCapture(evt.pointerId);
+    } catch (_) {
+      /* pointer may already be released */
+    }
+  };
+
+  el.addEventListener("pointerdown", onPointerDown);
+  el.addEventListener("pointermove", onPointerMove);
+  el.addEventListener("pointerup", endDrag);
+  el.addEventListener("pointercancel", endDrag);
+}
+
 function sendAddPolygon(geometry) {
   const gj = geometryToGeoJSON(geometry);
   fetch(`${BACKEND}/api/polygons`, {
