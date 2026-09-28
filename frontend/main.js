@@ -897,6 +897,8 @@ function updateHudView() {
   hudEls.resolution.textContent =
     res === undefined ? "—" : res.toExponential(3);
   hudEls.center.textContent = `[${hudFmt(c[0])}, ${hudFmt(c[1])}]`;
+  // eslint-disable-next-line no-console
+  console.log("[glacier] view changed: zoom=", z, "resolution=", res, "center=", c);
 }
 
 function updateHudMouse(evt) {
