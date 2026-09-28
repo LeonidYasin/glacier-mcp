@@ -189,6 +189,42 @@ def exchange_code(code: str) -> UserCredentials:
 
 _initialized_for: str | None = None
 
+#: The currently signed-in user. Set by ``app.gee_auth_callback`` after a
+#: successful OAuth exchange, cleared by ``app.gee_auth_logout``.
+#:
+#: We keep a *single* global active user rather than a per-session store
+#: because the MCP tools (which are the main consumers of these
+#: credentials) have no HTTP request to read a session cookie from — they
+#: are invoked by the agent over a completely separate transport. For a
+#: single-user localhost app that is exactly the right trade-off: whoever
+#: last completed the OAuth flow in the browser *is* the active user.
+_active_user: UserCredentials | None = None
+
+
+def set_active_user(user: UserCredentials | None) -> None:
+    """Record (or clear) the currently signed-in user.
+
+    Called from ``app.gee_auth_callback`` (with a real user) and
+    ``app.gee_auth_logout`` (with ``None``). Also re-initialises Earth
+    Engine so subsequent calls immediately run as the new user.
+    """
+    global _active_user, _initialized_for
+    _active_user = user
+    if user is None:
+        # Drop the "already initialised for" marker so a later sign-in
+        # re-runs ee.Initialize even if the email happens to repeat.
+        _initialized_for = None
+        return
+    try:
+        init_ee(user)
+    except Exception:  # noqa: BLE001 — surfaced later via tool errors
+        pass
+
+
+def get_active_user() -> UserCredentials | None:
+    """Return the currently signed-in user, or None if nobody signed in."""
+    return _active_user
+
 
 def init_ee(user: UserCredentials, project: str | None = None) -> None:
     """Initialise Earth Engine with the user's credentials.
