@@ -82,6 +82,74 @@ body {
   font-family: inherit;
 }
 
+/* ---- GEE basemap controls ------------------------------------------------- */
+
+/* Small caption in front of a control ("Basemap", "Opacity"). */
+#toolbar .toolbar-label {
+  flex: 0 0 auto;
+  color: #a0aec0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Vertical divider between logical groups of controls. */
+#toolbar .toolbar-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  background: #4a5568;
+  margin: 0 4px;
+}
+
+/* Preset dropdown — same footprint as .btn.btn-secondary. */
+#toolbar select.btn {
+  height: 28px;
+  padding: 0 8px;
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+#toolbar select.btn:hover {
+  background: #374151;
+}
+
+/* Scene-id field. Kept fairly wide so a full Sentinel-2 id is visible. */
+#toolbar .toolbar-input {
+  flex: 0 1 320px;
+  min-width: 120px;
+  height: 26px;
+  padding: 0 8px;
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+#toolbar .toolbar-input::placeholder {
+  color: #718096;
+}
+
+#toolbar .toolbar-input:focus {
+  outline: none;
+  border-color: #2b6cb0;
+}
+
+/* Opacity slider — narrow, sits between two labels. */
+#toolbar input[type="range"]#gee-basemap-opacity {
+  flex: 0 0 auto;
+  width: 90px;
+  accent-color: #2f855a;
+  cursor: pointer;
+}
+
 /* Hide the native file input; the <label> is the visible control. */
 #geotiff-file {
   display: none;
