@@ -1064,6 +1064,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
             }
         )
     )
+    # The layer registry is server-owned; a freshly connected tab needs a
+    # snapshot before it can render the panel.
+    await ws.send_text(json.dumps(layer_store.to_json()))
     try:
         while True:
             raw = await ws.receive_text()
@@ -1071,8 +1074,26 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 msg = json.loads(raw)
             except (TypeError, ValueError):
                 continue
-            if isinstance(msg, dict) and msg.get("type") == "capture_map_response":
+            if not isinstance(msg, dict):
+                continue
+            kind = msg.get("type")
+            if kind == "capture_map_response":
                 hub.resolve_capture(msg.get("request_id") or "", msg)
+            elif kind == "layer_register":
+                # A GeoTIFF/raster the browser tiled locally announces itself
+                # here so the server store stays authoritative.
+                try:
+                    layer_store.add(
+                        str(msg.get("id") or ""),
+                        str(msg.get("kind") or "geotiff"),
+                        str(msg.get("name") or msg.get("id") or "layer"),
+                        url=msg.get("url"),
+                        opacity=msg.get("opacity", 1.0),
+                        visible=msg.get("visible", True),
+                    )
+                except LayerError:
+                    continue
+                await hub.push_layers_state()
     except WebSocketDisconnect:
         await hub.disconnect(ws)
 
