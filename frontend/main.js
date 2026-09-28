@@ -378,16 +378,29 @@ function applyGeoTiffToMap(meta) {
   vectorSource.clear();
   selectedIndex = null;
 
-  const center = [(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2];
-  const span = Math.max(Math.abs(extent[2] - extent[0]), Math.abs(extent[3] - extent[1])) || 1;
-  map.setView(
-    new ol.View({
-      projection,
-      center,
-      resolution: span / 800,
-      constrainResolution: false,
-    })
-  );
+  const width = Math.abs(extent[2] - extent[0]);
+  const height = Math.abs(extent[3] - extent[1]);
+
+  const view = new ol.View({
+    projection,
+    center: [(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2],
+    constrainResolution: false,
+    // Keep the raster's full detail available: allow zooming to the native
+    // pixel resolution and beyond, but never let the view drift so far out
+    // that the raster becomes a dot.
+    minResolution: Math.max(width / 100000, 1e-9),
+  });
+  map.setView(view);
+
+  // Fit the *whole* extent into the map viewport, leaving a small margin.
+  // Using view.fit() (instead of hand-computed resolution) accounts for the
+  // actual aspect ratio of both the raster and the browser window, so a tall
+  // raster is no longer squeezed into a narrow strip.
+  view.fit(extent, {
+    size: map.getSize(),
+    padding: [20, 20, 20, 20],
+    constrainResolution: false,
+  });
 }
 
 // ---- Buttons --------------------------------------------------------------
