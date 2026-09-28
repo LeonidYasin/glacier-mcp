@@ -778,6 +778,13 @@ function applyGeoTiffToMap(meta) {
     minResolution: Math.max(width / 100000, 1e-9),
   });
   map.setView(view);
+  // Re-subscribe the HUD to the NEW view. `installHud()` subscribed to the
+  // original view created in `initMap()`; `map.setView(view)` throws that
+  // view away, so without this the HUD freezes at whatever zoom/resolution
+  // the original view had (typically zoom 2.12, resolution 3.594e+4).
+  if (typeof rebindHudView === "function") {
+    rebindHudView();
+  }
 
   // Fit the *whole* extent into the map viewport, leaving a small margin.
   // Using view.fit() (instead of hand-computed resolution) accounts for the
