@@ -382,7 +382,7 @@ def extract_glacier_contours(
 
     _require_ee()
     region = _bbox_to_ee_geometry(bbox)
-    image = ee.Image(S2_COLLECTION + "/" + scene_id).clip(region)
+    image = ee.Image(S2_COLLECTION + "/" + _resolve_scene_id(scene_id)).clip(region)
 
     # Sentinel-2 band names in COPERNICUS/S2_SR_HARMONIZED:
     #   B3 = green (~560 nm), B11 = SWIR1 (~1610 nm)
