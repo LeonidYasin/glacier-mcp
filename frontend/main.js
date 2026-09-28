@@ -1310,6 +1310,50 @@ function initGeeAuth() {
   setInterval(refreshGeeStatus, 5000);
 }
 
+// ---- Sidebar collapse -----------------------------------------------------
+//
+// The tool panel is a collapsible left sidebar (see index.html). Its state
+// is a single class on <body> — 'sidebar-collapsed' — so both the sidebar
+// and the map position react to it via CSS. We remember the choice so the
+// map stays wide across reloads once the user has hidden the tools.
+
+const SIDEBAR_STATE_KEY = "glacier-mcp:sidebar-collapsed";
+
+function setSidebarCollapsed(collapsed) {
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+  try {
+    localStorage.setItem(SIDEBAR_STATE_KEY, collapsed ? "1" : "0");
+  } catch (_err) {
+    // localStorage can be unavailable (private mode); the toggle still works.
+  }
+  // OpenLayers needs a nudge after the map container changes size.
+  if (map) map.updateSize();
+}
+
+function initSidebar() {
+  const toggle = document.getElementById("sidebar-toggle");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      setSidebarCollapsed(!document.body.classList.contains("sidebar-collapsed"));
+    });
+  }
+  // Keyboard shortcut: B toggles the sidebar (common in GIS editors).
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "b" || ev.key === "B") {
+      if (ev.target && /INPUT|SELECT|TEXTAREA/.test(ev.target.tagName)) return;
+      setSidebarCollapsed(!document.body.classList.contains("sidebar-collapsed"));
+    }
+  });
+  // Restore the previous choice.
+  let collapsed = false;
+  try {
+    collapsed = localStorage.getItem(SIDEBAR_STATE_KEY) === "1";
+  } catch (_err) {
+    collapsed = false;
+  }
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+}
+
 // ---- GEE basemap ----------------------------------------------------------
 //
 // Puts a *real* Sentinel-2 image under the polygons. The server calls
