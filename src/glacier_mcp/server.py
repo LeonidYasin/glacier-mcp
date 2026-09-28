@@ -98,7 +98,11 @@ def add_polygon(ring: list[list[float]], name: str | None = None) -> dict:
 
 @mcp.tool()
 def remove_polygon(polygon_index: int) -> dict:
-    """Remove the polygon at ``polygon_index``. Refuses to remove the last."""
+    """Remove the polygon at ``polygon_index``.
+
+    Emptying the collection is allowed — the UI handles the empty case and
+    the user may want to start over.
+    """
     _state.remove_polygon(polygon_index)
     return {"ok": True, "total": len(_state)}
 
