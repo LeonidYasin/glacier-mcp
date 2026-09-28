@@ -742,27 +742,25 @@ _gee_states: dict[str, tuple[float, Any]] = {}
 _gee_sessions: dict[str, gee.UserCredentials] = {}
 
 
-def _issue_state(flow: Any) -> str:
-    """Register a Flow under a fresh random state. Returns the state.
+def _remember_flow(state: str, flow: Any) -> None:
+    """Register a Flow under ``state``, sweeping expired entries first.
 
-    The Flow object is stored alongside a monotonic timestamp so we can
-    expire abandoned consent attempts. See _consume_state.
+    Storing the Flow (not just its id) is what makes PKCE work: the
+    Flow holds the ephemeral ``code_verifier`` that Google expects on the
+    token endpoint. If we created a new Flow in the callback, Google
+    would answer ``(invalid_grant) Missing code verifier``.
     """
     import time as _time
 
     now = _time.monotonic()
-    # Sweep expired entries first so the dict cannot grow unbounded if a
-    # user abandons the consent screen repeatedly.
     for k, (ts, _f) in list(_gee_states.items()):
         if now - ts > _GEE_STATE_TTL_S:
             _gee_states.pop(k, None)
-    state = secrets.token_urlsafe(24)
     _gee_states[state] = (now, flow)
-    return state
 
 
-def _consume_state(state: str | None) -> Any | None:
-    """Return the Flow registered under `state`, or None; pop either way."""
+def _take_flow(state: str | None) -> Any | None:
+    """Return the Flow registered under ``state`` (or None) and drop it."""
     import time as _time
 
     if not state:
