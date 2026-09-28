@@ -539,6 +539,14 @@ def geotiff_tile(entry_id: str, z: int, x: int, y: int) -> Response:
     entry = _geotiffs.get(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Unknown GeoTIFF id.")
+    # DEBUG: log every tile request. This is intentionally very noisy so we
+    # can see exactly which tile coordinates the frontend asks for and how
+    # they map to the raster. Turn off / gate with an env var later.
+    import sys as _sys
+    _sys.stderr.write(
+        f"[tile-req] id={entry_id} z={z} x={x} y={y}\n"
+    )
+    _sys.stderr.flush()
     try:
         png = gio.render_tile_png(entry.raster.path, z=z, x=x, y=y, tile_size=256)
     except gio.IOError as exc:
@@ -546,6 +554,10 @@ def geotiff_tile(entry_id: str, z: int, x: int, y: int) -> Response:
     except ValueError as exc:
         # zoom out of range from render_tile_png
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _sys.stderr.write(
+        f"[tile-ok]  id={entry_id} z={z} x={x} y={y} bytes={len(png)}\n"
+    )
+    _sys.stderr.flush()
     # Cache aggressively: tiles are immutable for a given (id, z, x, y).
     return Response(
         content=png,
