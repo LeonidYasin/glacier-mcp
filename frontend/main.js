@@ -717,6 +717,13 @@ function applyGeoTiffToMap(meta) {
     projection,
     center: [(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2],
     constrainResolution: false,
+    // Anchor the view's resolution range to the tile grid: the coarsest
+    // level (z=0) is exactly resolutions[0] for the *longer* raster side.
+    // Without maxResolution the view can pick a level ABOVE our grid,
+    // which makes OpenLayers request tile indices outside the intended
+    // 1 x 1..2 x 2..4 x 4 pyramid and produces visible seams between
+    // neighbouring tiles.
+    maxResolution: resolutions[0],
     // Keep the raster's full detail available: allow zooming to the native
     // pixel resolution and beyond, but never let the view drift so far out
     // that the raster becomes a dot.
