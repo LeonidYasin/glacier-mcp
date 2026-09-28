@@ -73,9 +73,12 @@ class PolygonState:
         return self._polygons[index]
 
     # Kept for backwards compatibility with tests and callers that assume
-    # a single polygon: returns the first one.
+    # a single polygon: returns the first one. Raises StateError on empty
+    # state so callers do not silently get an ``IndexError``.
     @property
     def polygon(self) -> Polygon:
+        if not self._polygons:
+            raise StateError("No polygons in state (empty collection).")
         return self._polygons[0]
 
     def get_vertices(self, polygon_index: int = 0) -> list[geom.Vertex]:
