@@ -18,6 +18,25 @@
       <button type="button" id="btn-gee-login" class="btn btn-accent" title="Sign in with your Google account to use Earth Engine">Sign in with Google</button>
       <button type="button" id="btn-gee-logout" class="btn btn-secondary" title="Sign out of Google Earth Engine" hidden>Sign out</button>
       <span id="gee-status" title="Google Earth Engine sign-in status">GEE: not signed in</span>
+
+      <!-- GEE basemap: draw a real Sentinel-2 image under the polygons.
+           The scene id is filled in from the search results; the preset
+           dropdown is populated from /api/gee/basemap/presets. -->
+      <span class="toolbar-sep"></span>
+      <label for="gee-basemap-preset" class="toolbar-label">Basemap</label>
+      <select id="gee-basemap-preset" class="btn btn-secondary" title="Sentinel-2 visualisation preset">
+        <option value="">— none —</option>
+      </select>
+      <label for="gee-basemap-opacity" class="toolbar-label">Opacity</label>
+      <input type="range" id="gee-basemap-opacity" min="0" max="1" step="0.05" value="1"
+             title="Basemap opacity" />
+      <button type="button" id="btn-gee-basemap-apply" class="btn btn-accent"
+              title="Load the selected Sentinel-2 scene as the map basemap" disabled>Load basemap</button>
+      <button type="button" id="btn-gee-basemap-clear" class="btn btn-secondary"
+              title="Remove the GEE basemap" hidden>Clear basemap</button>
+      <input type="text" id="gee-basemap-scene" class="toolbar-input"
+             placeholder="scene id (auto-filled from search)"
+             title="Sentinel-2 scene id — filled in automatically when you pick a scene" />
       <span id="geotiff-info">No raster loaded — draw polygons, then export.</span>
       <span id="status">loading...</span>
     </div>
