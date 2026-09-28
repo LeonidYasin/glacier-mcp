@@ -171,7 +171,10 @@ async function handleFileUpload(event) {
     );
     setStatus("raster loaded");
   } catch (err) {
-    setInfo(`Upload failed: ${err.message}`);
+    // Surface the real error in DevTools too - the info bar is small.
+    console.error("GeoTIFF upload/apply failed:", err);
+    const msg = err && err.message ? err.message : String(err);
+    setInfo(`Upload failed: ${msg}`);
     setStatus("error");
   } finally {
     // Allow re-selecting the same file later.
