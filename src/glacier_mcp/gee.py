@@ -600,8 +600,6 @@ def get_basemap(
     ``L.tileLayer``. The map id is valid for about 24 hours; after that
     the UI just calls this function again.
     """
-    import ee
-
     _require_ee()
 
     if vis_params is None:
