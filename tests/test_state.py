@@ -77,7 +77,7 @@ def test_apply_does_not_push_on_raise() -> None:
 
 def test_history_is_bounded() -> None:
     s = PolygonState(_square(), history_size=3)
-    for i in range(10):
+    for _i in range(10):
         s.move_vertex(0, 1.0, 0.0)
     # 3 undo steps max, no more
     count = 0
