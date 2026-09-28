@@ -337,7 +337,16 @@ def render_tile_png(
     # content_w/content_h can come out as 0. Paste a single transparent pixel
     # and skip — the tile is effectively empty.
     if content_w > 0 and content_h > 0:
-        cropped = img.resize((content_w, content_h), Image.BILINEAR)
+        # NEAREST is the right resampling here, not BILINEAR. Each tile is
+    # cut independently, so bilinear interpolation along a tile edge has
+    # no neighbour pixels from the adjacent tile to blend with — the two
+    # tiles end up slightly different colours at the shared border, which
+    # shows up as a visible grid of seams when the user zooms in. NEAREST
+    # just picks the closest source pixel, and adjacent tiles pick the
+    # SAME pixel on the shared edge, so the seams disappear. It also
+    # matches what desktop GIS (QGIS, ArcGIS) shows when you zoom past
+    # the raster's native resolution.
+    cropped = img.resize((content_w, content_h), Image.NEAREST)
         canvas.paste(cropped, (paste_x, paste_y))
 
     buf = stdlib_io.BytesIO()
