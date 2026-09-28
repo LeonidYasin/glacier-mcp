@@ -237,7 +237,7 @@ def render_tile_png(
         read_w = max(1, src_col_end - src_col)
         read_h = max(1, src_row_end - src_row)
 
-        window = Window(col_offset=src_col, row_offset=src_row, width=read_w, height=read_h)
+        window = Window(src_col, src_row, read_w, read_h)
         data = src.read(window=window)  # shape (bands, read_h, read_w)
 
     # --- Normalize each band to 0..255 and build an RGBA image -------------
