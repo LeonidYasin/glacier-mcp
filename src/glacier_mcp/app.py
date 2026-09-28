@@ -782,21 +782,19 @@ def get_gee_user(request: Request) -> gee.UserCredentials | None:
 
 @app.get("/api/gee/auth/start")
 def gee_auth_start() -> RedirectResponse:
-    """Kick off the OAuth dance: redirect the browser to Google."""
-    state = secrets.token_urlsafe(24)
+    """Kick off the OAuth dance: redirect the browser to Google.
+
+    We issue a CSRF `state` and remember it in-process. We deliberately
+    do NOT set a cookie: modern Chrome drops SameSite=Lax cookies on the
+    cross-site navigation from google.com back to 127.0.0.1, so a cookie
+    here would produce 'state mismatch' on every callback.
+    """
+    state = _issue_state()
     try:
         url = gee.build_auth_url(state=state)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    response = RedirectResponse(url=url)
-    response.set_cookie(
-        "glacier_oauth_state",
-        state,
-        httponly=True,
-        samesite="lax",
-        max_age=600,  # 10 minutes to complete the consent screen
-    )
-    return response
+    return RedirectResponse(url=url)
 
 
 @app.get("/api/gee/auth/callback")
