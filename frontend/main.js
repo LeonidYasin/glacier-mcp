@@ -757,6 +757,14 @@ function applyGeoTiffToMap(meta) {
     projection,
     center: [(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2],
     constrainResolution: false,
+    // Clamp the view to the tile pyramid. `resolutions[0]` is z=0, where the
+    // whole raster fits into a single 256x256 tile. If the view is allowed
+    // to zoom out past that (e.g. a small browser window with a huge raster
+    // — `view.fit()` computes its own resolution from the viewport), the
+    // tile grid clamps z to 0 for every query and stretches the SAME z=0
+    // tile across the whole screen. That is what produced the visible
+    // "tiles mosaic" — the same tile painted many times.
+    maxResolution: resolutions[0],
     // Keep the raster's full detail available: allow zooming to the native
     // pixel resolution and beyond, but never let the view drift so far out
     // that the raster becomes a dot.
@@ -773,6 +781,16 @@ function applyGeoTiffToMap(meta) {
     padding: [20, 20, 20, 20],
     constrainResolution: false,
   });
+  // `view.fit()` recomputes the resolution from the viewport size, ignoring
+  // the `maxResolution` we set above (fit only respects it as an upper
+  // clamp on the FINAL resolution, and only if the fit would zoom out
+  // further than that — which is often not the case here). Re-apply the
+  // clamp explicitly: if the fit landed coarser than z=0, snap back to
+  // z=0 and re-centre. This is the actual fix for the tiled-mosaic look.
+  if (view.getResolution() > resolutions[0]) {
+    view.setResolution(resolutions[0]);
+    view.setCenter([(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2]);
+  }
 
   // Populate the debug HUD with this raster's identity and metadata. The
   // view-related rows (zoom / resolution / center / mouse) update on their
