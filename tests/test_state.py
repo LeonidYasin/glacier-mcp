@@ -137,10 +137,22 @@ def test_remove_polygon_deletes_one() -> None:
     assert s.names == ["glacier_2"]
 
 
-def test_remove_last_polygon_refuses() -> None:
+def test_remove_last_polygon_is_allowed() -> None:
+    """Removing the only polygon leaves an empty (valid) collection."""
     s = PolygonState(_square())
-    with pytest.raises(StateError):
-        s.remove_polygon(0)
+    s.remove_polygon(0)
+    assert len(s) == 0
+    assert s.names == []
+
+
+def test_remove_last_polygon_is_undoable() -> None:
+    """Undo after removing the last polygon restores it."""
+    s = PolygonState(_square())
+    s.remove_polygon(0)
+    assert len(s) == 0
+    s.undo()
+    assert len(s) == 1
+    assert s.names == ["glacier_1"]
 
 
 def test_remove_polygon_bad_index_raises() -> None:
