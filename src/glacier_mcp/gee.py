@@ -234,6 +234,8 @@ def init_ee(user: UserCredentials, project: str | None = None) -> None:
     a single-user localhost app. We remember whose credentials are active
     so we can skip redundant re-initialisation.
     """
+    global _initialized_for  # noqa: PLW0603 — module-level cache by design
+
     import ee  # imported lazily: it is a heavy dependency
 
     if _initialized_for == (user.email or user.refresh_token):
@@ -241,8 +243,6 @@ def init_ee(user: UserCredentials, project: str | None = None) -> None:
 
     project = project or os.environ.get("EE_PROJECT") or None
     ee.Initialize(credentials=user.to_google_credentials(), project=project)
-
-    global _initialized_for
     _initialized_for = user.email or user.refresh_token
 
 
