@@ -170,6 +170,23 @@ function initMap() {
       zoom: 2,
       projection: "EPSG:3857",
     }),
+    // Default OL controls (zoom buttons, attribution) plus a metric scale
+    // line in the bottom-left corner. The scale line is redrawn on every
+    // zoom; its pixel length and label follow the current view resolution,
+    // so it shows how many metres on the ground one screen-length covers.
+    // This is what makes the bar independent of the physical screen DPI —
+    // unlike the "1 cm = X m" text in the HUD, which assumes a 96-dpi
+    // reference display.
+    controls: ol.control.defaults.defaults().extend([
+      new ol.control.ScaleLine({
+        units: "metric",
+        bar: false,
+        steps: 4,
+        text: false,
+        minWidth: 100,
+        maxWidth: 200,
+      }),
+    ]),
   });
 
   // Two interactions, but only one active at a time — like QGIS. Starting in
