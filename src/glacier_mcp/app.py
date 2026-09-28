@@ -206,6 +206,11 @@ class _Hub:
         self._lock = asyncio.Lock()
         # request_id -> Future[dict] set by resolve_capture()
         self._pending: dict[str, asyncio.Future] = {}
+        # The event loop this hub lives on. MCP tools run in a worker
+        # thread (FastMCP executes sync tools off-loop), so they cannot
+        # await a coroutine directly — they schedule it here with
+        # asyncio.run_coroutine_threadsafe. Set once at app startup.
+        self.loop: asyncio.AbstractEventLoop | None = None
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
