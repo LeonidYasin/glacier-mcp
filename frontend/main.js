@@ -234,9 +234,21 @@ function initMap() {
     }
   });
 
-  // Delete key removes the selected polygon. Guard against undefined as well
-  // as null: `selectedIndex` could be `undefined` if a feature had no index.
+  // Keyboard shortcuts:
+  //   Delete/Backspace — remove the selected polygon
+  //   Esc              — cancel current drawing, return to select mode
+  //   N                — start drawing a new polygon
   window.addEventListener("keydown", (evt) => {
+    if (evt.key === "Escape" && drawMode) {
+      setDrawMode(false);
+      evt.preventDefault();
+      return;
+    }
+    if ((evt.key === "n" || evt.key === "N") && !drawMode) {
+      setDrawMode(true);
+      evt.preventDefault();
+      return;
+    }
     const canDelete =
       (evt.key === "Delete" || evt.key === "Backspace") &&
       typeof selectedIndex === "number";
