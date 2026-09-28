@@ -523,11 +523,11 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
     # proj4js 2.x does not parse WKT2, only WKT1_GDAL or raw proj4.
     try:
         crs_wkt = raster.crs.to_wkt(version="WKT1_GDAL")
-    except Exception:
+    except Exception:  # noqa: BLE001 — fall back to whatever WKT version works
         crs_wkt = raster.crs.to_wkt()
     try:
         crs_proj4 = raster.crs.to_proj4()
-    except Exception:
+    except Exception:  # noqa: BLE001 — proj4 is optional metadata, empty is fine
         crs_proj4 = ""
 
     meta = {
