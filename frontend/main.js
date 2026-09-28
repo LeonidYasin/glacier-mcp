@@ -160,7 +160,7 @@ function initMap() {
         hit = feat;
         return true;
       },
-      { hitTolerance: 6 }
+      { hitTolerance: 12 }
     );
     const idx = hit ? hit.get("index") : null;
     selectedIndex = typeof idx === "number" ? idx : null;
