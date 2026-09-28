@@ -269,6 +269,24 @@ class _Hub:
         if fut is not None and not fut.done():
             fut.set_result(payload)
 
+    async def push_gee_basemap(self, payload: dict) -> int:
+        """Push a GEE basemap layer to every connected browser tab.
+
+        The agent calls ``gee_get_basemap`` (MCP), which resolves an XYZ
+        tile URL on the server; this method then hands that URL to the
+        open map tab so the layer actually appears *without the user
+        having to click anything*. Same fire-and-forget pattern as
+        ``broadcast`` — there is no reply, because the browser does not
+        need to acknowledge the layer swap.
+
+        Returns the number of tabs the message reached (0 = no tab open,
+        which the caller may want to report back to the agent).
+        """
+        async with self._lock:
+            n = len(self._clients)
+        await self.broadcast({"type": "gee_basemap", **payload})
+        return n
+
 
 hub = _Hub()
 
