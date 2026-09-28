@@ -36,3 +36,6 @@ Thumbs.db
 # Local config
 .env
 .env.local
+
+# Screenshots captured by the capture_map MCP tool.
+captures/
