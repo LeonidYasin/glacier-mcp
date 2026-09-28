@@ -197,6 +197,70 @@ def smooth_polygon(tolerance: float = 0.0, polygon_index: int = 0) -> dict:
     return {"ok": True, "vertices": get_vertices(polygon_index)}
 
 
+# ---- visualisation --------------------------------------------------------
+
+
+@mcp.tool()
+async def capture_map(full_viewport: bool = False, thumb_width: int = 512) -> list:
+    """Capture the current map view as a PNG and return a thumbnail.
+
+    Requires a browser tab open at http://127.0.0.1:8765/ with the map UI
+    loaded — the tool sends a WebSocket request to that tab, the browser
+    renders the map with html2canvas, and the PNG comes back over the same
+    socket.
+
+    Arguments:
+      full_viewport — if False, capture only #map (the map itself);
+                      if True, capture the whole page (toolbar, HUD, panel).
+      thumb_width   — width of the returned preview image, in pixels.
+
+    Returns a list of MCP content blocks:
+      * a text block with JSON metadata: {path, width, height,
+        thumb_width, thumb_height, size_bytes};
+      * an image block with the downscaled preview (image/png).
+
+    The full-resolution PNG is written to the ``captures/`` directory next
+    to the frontend; the path in the text block points at it.
+    """
+    # Lazy import: app.py pulls in titiler/rasterio, which we do not want
+    # to import when the MCP server is started in a slim context.
+    from .app import hub, save_capture
+
+    try:
+        payload = await hub.request_capture(
+            {"fullViewport": full_viewport, "thumbWidth": thumb_width},
+            timeout=15.0,
+        )
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    except asyncio.TimeoutError as exc:
+        raise ValueError(
+            "Timed out waiting for the browser. "
+            "Is the glacier-mcp UI tab still open and responsive?"
+        ) from exc
+
+    if not payload.get("ok"):
+        raise ValueError(f"capture failed in browser: {payload.get('error')}")
+
+    full_path = save_capture(payload["full_base64"])
+    meta = {
+        "path": str(full_path),
+        "width": payload["width"],
+        "height": payload["height"],
+        "thumb_width": payload["thumb_width"],
+        "thumb_height": payload["thumb_height"],
+        "size_bytes": full_path.stat().st_size,
+    }
+    return [
+        {"type": "text", "text": json.dumps(meta)},
+        {
+            "type": "image",
+            "data": payload["thumb_base64"],
+            "mimeType": "image/png",
+        },
+    ]
+
+
 # ---- history --------------------------------------------------------------
 
 
