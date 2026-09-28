@@ -34,6 +34,14 @@ dependencies = [
     "pydantic>=2.6",
     "pillow>=10.0",
     "python-multipart>=0.0.9",
+    # titiler: production-ready COG tile server. Handles large rasters
+    # (>4096 px), mosaics, multi-layer overlays, and arbitrary CRSs — the
+    # pieces we tried to build by hand. Exposes a ready FastAPI router
+    # under /cog/tiles/{z}/{x}/{y}.png. See https://developmentseed.org/titiler/
+    "titiler.core>=0.20",
+    # rio-tiler is titiler's raster engine; pinning explicitly to avoid
+    # version drift between titiler.core and its reader.
+    "rio-tiler>=6.0",
 ]
 
 [project.optional-dependencies]
