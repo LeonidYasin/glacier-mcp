@@ -566,6 +566,70 @@ def geotiff_tile(entry_id: str, z: int, x: int, y: int) -> Response:
     )
 
 
+@app.get("/api/geotiff/{entry_id}/viewport")
+def geotiff_viewport(
+    entry_id: str,
+    minX: float,
+    minY: float,
+    maxX: float,
+    maxY: float,
+    width: int,
+    height: int,
+) -> Response:
+    """Render an arbitrary viewport of the source raster as a single PNG.
+
+    This is the WMS-style endpoint used by the frontend's
+    ol.source.ImageCanvas. Instead of the fixed 256x256 tile grid it
+    accepts a CRS bounding box (minX, minY, maxX, maxY — in the raster's
+    own CRS) and the desired output size in screen pixels. The response is
+    exactly one PNG of that size.
+
+    Resampling inside render_viewport_png:
+
+      * If the raster window has MORE pixels than the output size, we
+        CROP a symmetric sub-window — 1:1, no blur.
+      * If the raster window has FEWER pixels (zoomed in past native
+        resolution), we upscale with NEAREST so each raster pixel becomes
+        a solid NxN block.
+
+    No 256x256 grid, no tile edges, no bilinear blur.
+    """
+    entry = _geotiffs.get(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Unknown GeoTIFF id.")
+    # Guard against absurd sizes that could blow memory on a stray request.
+    width = max(1, min(int(width), 8192))
+    height = max(1, min(int(height), 8192))
+    import sys as _sys
+    _sys.stderr.write(
+        f"[viewport] id={entry_id} bbox=({minX:.2f},{minY:.2f},{maxX:.2f},{maxY:.2f}) "
+        f"size={width}x{height}\n"
+    )
+    _sys.stderr.flush()
+    try:
+        png = gio.render_viewport_png(
+            entry.raster.path,
+            min_x=float(minX),
+            min_y=float(minY),
+            max_x=float(maxX),
+            max_y=float(maxY),
+            out_w=int(width),
+            out_h=int(height),
+        )
+    except gio.IOError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # No long cache: the same (id, bbox, size) may be requested repeatedly
+    # as the user pans, but each distinct bbox is basically unique. Short
+    # cache to smooth small back-and-forth pans is enough.
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=5"},
+    )
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await hub.connect(ws)
