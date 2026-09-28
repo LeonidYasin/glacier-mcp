@@ -1665,24 +1665,20 @@ async function applyGeeBasemap() {
       return;
     }
 
-    // Replace any previous GEE basemap — one scene at a time keeps the
-    // layer stack simple and matches the single-scene tile URL model.
-    clearGeeBasemap();
-
+    const layerId = `gee:${data.scene_id || sceneId}:${data.preset || preset}`;
     const source = new ol.source.XYZ({
       url: data.tile_url,
       crossOrigin: "anonymous",
-      // The Earth Engine tile endpoint is not a standard {z}/{x}/{y}
-      // template on every API version, so let OL pick the default
-      // projection (EPSG:3857, which EE serves) and maxZoom.
       attributions: "Sentinel-2 · Google Earth Engine",
     });
-    geeBasemapLayer = new ol.layer.Tile({
-      source,
+    const layer = new ol.layer.Tile({ source });
+    addLayer(layerId, layer, {
+      kind: "gee",
+      name: `Sentinel-2 ${data.preset || preset} (${data.scene_id || sceneId})`,
+      url: data.tile_url,
       opacity: Number.isFinite(opacity) ? opacity : 1,
-      zIndex: -1, // below polygons and the raster overlay
     });
-    map.addLayer(geeBasemapLayer);
+    activeGeeLayerId = layerId;
 
     if (clearBtn) clearBtn.hidden = false;
     if (statusEl) {
