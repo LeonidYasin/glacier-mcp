@@ -803,16 +803,25 @@ function applyGeoTiffToMap(meta) {
     (extent[1] + extent[3]) / 2,
   ];
   // eslint-disable-next-line no-console
-  console.log("[glacier] fit produced:", {
-    resolution: view.getResolution(),
-    center: view.getCenter(),
-    targetResolution,
-    rasterCenter,
-    extent,
-    resolutionsLen: resolutions.length,
-  });
+  console.log("[glacier] ================== APPLY GEOTIFF ==================");
+  // eslint-disable-next-line no-console
+  console.log("[glacier] meta:", JSON.stringify(meta, null, 2));
+  // eslint-disable-next-line no-console
+  console.log("[glacier] extent:", extent);
+  // eslint-disable-next-line no-console
+  console.log("[glacier] width:", width, "height:", height, "maxSpan:", maxSpan);
+  // eslint-disable-next-line no-console
+  console.log("[glacier] resolutions.length:", resolutions.length);
+  // eslint-disable-next-line no-console
+  console.log("[glacier] resolutions[0..4]:", resolutions.slice(0, 5));
+  // eslint-disable-next-line no-console
+  console.log("[glacier] targetResolution (= resolutions[0]):", targetResolution);
+  // eslint-disable-next-line no-console
+  console.log("[glacier] before clamp, view.resolution:", view.getResolution(), "view.center:", view.getCenter());
   view.setResolution(targetResolution);
   view.setCenter(rasterCenter);
+  // eslint-disable-next-line no-console
+  console.log("[glacier] after clamp, view.resolution:", view.getResolution(), "view.center:", view.getCenter());
 
   // Populate the debug HUD with this raster's identity and metadata. The
   // view-related rows (zoom / resolution / center / mouse) update on their
