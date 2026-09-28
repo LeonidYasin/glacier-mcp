@@ -200,22 +200,43 @@ def render_tile_png(
         raster_w = src.width
         raster_h = src.height
         bands = src.count
-
-        # Number of tiles along the *longer* axis at this zoom. Using the
-        # longer axis keeps tiles square in pixel space even for very
-        # elongated rasters.
+        transform = src.transform
+        # Full raster extent in CRS units (left, bottom, right, top).
+        left, top = transform * (0, 0)
+        right, bottom = transform * (raster_w, raster_h)
+        width_crs = right - left
+        height_crs = top - bottom
+        # The tile grid is SQUARE in CRS, matching the frontend TileGrid:
+        # maxSpan CRS units cover 2**z tiles on each axis, so one tile
+        # spans maxSpan / 2**z CRS units in BOTH directions. Origin is the
+        # raster's top-left corner (left, top). This is the crucial part —
+        # using pixel-based span_px (previous version) made the grid square
+        # in *pixels*, not in CRS, so a non-square raster produced partial
+        # tiles and visible seams.
+        max_span_crs = max(width_crs, height_crs)
         grid = 2 ** z
-        span_px = max(raster_w, raster_h) / grid  # source pixels per tile
+        tile_span_crs = max_span_crs / grid
 
-        # Window bounds in source pixels for this tile. Note: (0,0) is the
-        # top-left corner, so row_off increases downwards, consistent with
-        # rasterio's row direction and OpenLayers' tile origin for rasters
-        # whose Y axis points up (the tile grid stores origin as top-left
-        # and works in raster pixel space).
-        col_off = round(x * span_px)
-        row_off = round(y * span_px)
-        win_w = max(1, round(span_px))
-        win_h = win_w
+        # CRS bounds of this tile (x grows right, y grows down from top).
+        tile_left = left + x * tile_span_crs
+        tile_right = tile_left + tile_span_crs
+        tile_top = top - y * tile_span_crs
+        tile_bottom = tile_top - tile_span_crs
+
+        # Convert the CRS corners back to pixel coordinates via the
+        # inverse affine transform. `~transform * (crs_x, crs_y)` gives
+        # (col, row) float pixel coordinates (col right, row down).
+        inv = ~transform
+        col_f0, row_f0 = inv * (tile_left, tile_top)
+        col_f1, row_f1 = inv * (tile_right, tile_bottom)
+
+        # Integer pixel window (row grows down, matching rasterio).
+        col_off = int(round(min(col_f0, col_f1)))
+        row_off = int(round(min(row_f0, row_f1)))
+        col_end = int(round(max(col_f0, col_f1)))
+        row_end = int(round(max(row_f0, row_f1)))
+        win_w = max(1, col_end - col_off)
+        win_h = max(1, row_end - row_off)
 
         # Fully outside the raster → transparent tile.
         outside = (
