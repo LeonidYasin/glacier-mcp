@@ -18,7 +18,17 @@
       <span id="geotiff-info">No raster loaded — draw polygons, then export.</span>
       <span id="status">loading...</span>
     </div>
+
     <div id="map"></div>
+
+    <div id="polygon-panel">
+      <span id="panel-label">Glaciers:</span>
+      <div id="polygon-chips"></div>
+      <button type="button" id="btn-delete-selected" class="btn btn-danger" title="Delete the selected polygon (Del)" disabled>
+        Delete selected
+      </button>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/ol@10.0.0/dist/ol.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
     <script src="/static/main.js"></script>
