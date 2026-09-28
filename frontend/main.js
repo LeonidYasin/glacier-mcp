@@ -725,18 +725,16 @@ function applyGeoTiffToMap(meta) {
         // inside the tile grid. We can pass it straight to titiler's XYZ
         // endpoint — no manual y flip needed here.
         const [z, x, y] = tileCoord;
-        let url =
-          `${BACKEND}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png` +
-          `?url=${encodeURIComponent(cogPath)}`;
-        // rio-tiler 9.x sometimes fails to read a GeoTIFF's CRS through its
-        // own Reader when the file's WKT1 lacks a root-level AUTHORITY
-        // node. The result is `image.crs = None` and a 500 from titiler's
-        // CRS_to_uri. Passing `crs=` explicitly overrides whatever the
-        // reader inferred — we already have the EPSG code from upload.
-        if (meta.crs_epsg) {
-          url += `&crs=EPSG:${meta.crs_epsg}`;
-        }
-        return url;
+        // Route tiles to our own rasterio-backed endpoint instead of
+        // titiler. rio-tiler 9.x loses the GeoTIFF's CRS through its own
+        // Reader (image.crs = None), which crashes titiler in CRS_to_uri
+        // and produces a 500 for every tile. Our endpoint uses
+        // rasterio.open() directly, which sees the CRS correctly, and
+        // serves tiles in the raster's OWN CRS (matching the grid below).
+        return (
+          `${BACKEND}/api/geotiff/${meta.id}/tile/` +
+          `${z}/${x}/${y}.png`
+        );
       },
     }),
   });
