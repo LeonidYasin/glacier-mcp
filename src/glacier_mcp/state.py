@@ -147,10 +147,13 @@ class PolygonState:
         return result_index[0]
 
     def remove_polygon(self, index: int = 0) -> None:
-        """Remove polygon at ``index``. Refuses to leave the list empty."""
+        """Remove polygon at ``index``. Allowed even for the last polygon.
+
+        An empty state is legitimate — the user may want to start over, and
+        the map panel already handles the empty case. The earlier guard that
+        refused to remove the last polygon was a single-polygon leftover.
+        """
         self._check_index(index)
-        if len(self._polygons) <= 1:
-            raise StateError("Cannot remove the last polygon.")
 
         def _mutate(polys: list[Polygon], names: list[str]) -> None:
             del polys[index]
