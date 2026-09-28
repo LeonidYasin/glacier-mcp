@@ -1369,7 +1369,179 @@ function initSidebar() {
 // the scene id. The scene id is auto-filled when a search result is
 // picked, but the user can also paste one by hand.
 
-let geeBasemapLayer = null;
+// ---- Layer registry -------------------------------------------------------
+//
+// Every raster overlay (GEE Sentinel-2 basemap, uploaded GeoTIFF, external
+// XYZ layer such as a Soviet topo map) lives in this registry. It is the
+// single source of truth: the left-hand Layers panel renders from it, the
+// MCP tools mutate it over the WebSocket, and `zIndex` is derived from the
+// record's position so the stacking order matches what the panel shows.
+//
+//   id      — stable string key ('gee:20240928T…', 'geotiff:abc123', 'xyz:…')
+//   record  — { layer, kind, name, url, visible, opacity }
+const layerRegistry = new Map();
+
+//: zIndex of the lowest raster layer. Polygons live above every raster,
+//: and an uploaded GeoTIFF must stay above the satellite basemap, so we
+//: assign raster z-indexes from this floor upward.
+const LAYER_Z_FLOOR = -1000;
+
+function _nextLayerZ() {
+  return LAYER_Z_FLOOR + layerRegistry.size;
+}
+
+function addLayer(id, layer, meta) {
+  // Replace by id: re-adding the same key updates in place.
+  removeLayer(id, { silent: true });
+  const record = {
+    layer,
+    kind: meta.kind || "xyz",
+    name: meta.name || id,
+    url: meta.url || null,
+    visible: meta.visible !== false,
+    opacity: Number.isFinite(meta.opacity) ? meta.opacity : 1,
+  };
+  layer.setOpacity(record.opacity);
+  layer.setVisible(record.visible);
+  layerRegistry.set(id, record);
+  map.addLayer(layer);
+  reflowLayerZ();
+  renderLayerPanel();
+  return record;
+}
+
+function removeLayer(id, opts) {
+  const record = layerRegistry.get(id);
+  if (!record) return false;
+  map.removeLayer(record.layer);
+  layerRegistry.delete(id);
+  if (!opts || !opts.silent) {
+    reflowLayerZ();
+    renderLayerPanel();
+  }
+  return true;
+}
+
+function setLayerOpacity(id, opacity) {
+  const record = layerRegistry.get(id);
+  if (!record) return false;
+  const v = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
+  record.opacity = v;
+  record.layer.setOpacity(v);
+  renderLayerPanel();
+  return true;
+}
+
+function setLayerVisible(id, visible) {
+  const record = layerRegistry.get(id);
+  if (!record) return false;
+  record.visible = !!visible;
+  record.layer.setVisible(record.visible);
+  renderLayerPanel();
+  return true;
+}
+
+// Move a layer to a new position in the stack. `toIndex` counts from the
+// bottom of the raster stack (0 = lowest). The map id order is preserved
+// in the Map, so we rebuild zIndex from the insertion order.
+function reorderLayer(id, toIndex) {
+  if (!layerRegistry.has(id)) return false;
+  const ids = Array.from(layerRegistry.keys()).filter((k) => k !== id);
+  const clamped = Math.max(0, Math.min(ids.length, toIndex | 0));
+  ids.splice(clamped, 0, id);
+  const rebuilt = new Map();
+  for (const key of ids) rebuilt.set(key, layerRegistry.get(key));
+  layerRegistry.clear();
+  for (const [key, rec] of rebuilt) layerRegistry.set(key, rec);
+  reflowLayerZ();
+  renderLayerPanel();
+  return true;
+}
+
+// Push the registry order into ol zIndex values. Bottom-most record gets
+// the smallest zIndex so it draws first.
+function reflowLayerZ() {
+  let z = LAYER_Z_FLOOR;
+  for (const rec of layerRegistry.values()) {
+    rec.layer.setZIndex(z);
+    z += 1;
+  }
+}
+
+// The sidebar Layers panel. Rebuilt from the registry on every mutation;
+// cheap enough (a handful of layers) and guarantees the UI never drifts
+// from the actual map state.
+function renderLayerPanel() {
+  const list = document.getElementById("layer-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (layerRegistry.size === 0) {
+    const empty = document.createElement("div");
+    empty.className = "layer-empty";
+    empty.textContent = "No raster layers yet.";
+    list.appendChild(empty);
+    return;
+  }
+  // Render top-most first, which is what GIS users expect.
+  const entries = Array.from(layerRegistry.entries()).reverse();
+  for (const [id, rec] of entries) {
+    const row = document.createElement("div");
+    row.className = "layer-row";
+    row.dataset.layerId = id;
+
+    const vis = document.createElement("input");
+    vis.type = "checkbox";
+    vis.checked = rec.visible;
+    vis.title = "Toggle visibility";
+    vis.addEventListener("change", () => setLayerVisible(id, vis.checked));
+
+    const name = document.createElement("span");
+    name.className = "layer-name";
+    name.textContent = rec.name;
+    name.title = rec.url || rec.name;
+
+    const opacity = document.createElement("input");
+    opacity.type = "range";
+    opacity.min = "0";
+    opacity.max = "1";
+    opacity.step = "0.05";
+    opacity.value = String(rec.opacity);
+    opacity.title = "Layer opacity";
+    opacity.addEventListener("input", () =>
+      setLayerOpacity(id, parseFloat(opacity.value))
+    );
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "layer-btn";
+    up.textContent = "▲";
+    up.title = "Move layer up";
+    up.addEventListener("click", () => {
+      const idx = Array.from(layerRegistry.keys()).indexOf(id);
+      reorderLayer(id, idx + 1);
+    });
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "layer-btn";
+    down.textContent = "▼";
+    down.title = "Move layer down";
+    down.addEventListener("click", () => {
+      const idx = Array.from(layerRegistry.keys()).indexOf(id);
+      reorderLayer(id, Math.max(0, idx - 1));
+    });
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "layer-btn layer-remove";
+    close.textContent = "✕";
+    close.title = "Remove layer";
+    close.addEventListener("click", () => removeLayer(id));
+
+    row.append(vis, name, opacity, up, down, close);
+    list.appendChild(row);
+  }
+}
 
 // Server-driven counterpart to applyGeeBasemap(): the agent resolved the
 // XYZ tile URL on the backend (gee_get_basemap MCP tool) and pushed it
@@ -1379,20 +1551,19 @@ function applyGeeBasemapFromServer(msg) {
   if (!msg || !msg.tile_url) return;
   const statusEl = document.getElementById("status");
 
-  // Replace any previous GEE basemap — one scene at a time.
-  clearGeeBasemap();
-
+  const id = `gee:${msg.scene_id || msg.tile_url}`;
   const source = new ol.source.XYZ({
     url: msg.tile_url,
     crossOrigin: "anonymous",
     attributions: "Sentinel-2 · Google Earth Engine",
   });
-  geeBasemapLayer = new ol.layer.Tile({
-    source,
+  const layer = new ol.layer.Tile({ source });
+  addLayer(id, layer, {
+    kind: "gee",
+    name: `Sentinel-2 ${msg.preset || ""} ${msg.scene_id || ""}`.trim(),
+    url: msg.tile_url,
     opacity: 1,
-    zIndex: -1,
   });
-  map.addLayer(geeBasemapLayer);
 
   // Recenter so the user sees the scene rather than an empty ocean.
   // bbox is [west, south, east, north] in EPSG:4326.
