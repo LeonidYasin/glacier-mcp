@@ -66,11 +66,6 @@ _cog_tiler = _CogTilerFactory()
 # intercept it at the source: patch rio-tiler's Reader.tile to return a
 # fully transparent image for out-of-bounds tiles instead of raising.
 # This is what every standard XYZ tile server does.
-from rio_tiler.errors import TileOutsideBounds as _TileOutsideBounds
-from rio_tiler.io.rasterio import Reader as _RioReader
-from rio_tiler.models import ImageData as _ImageData
-import numpy as _np
-
 _original_tile = _RioReader.tile
 
 
