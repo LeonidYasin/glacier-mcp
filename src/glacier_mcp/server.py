@@ -321,6 +321,156 @@ def redo() -> dict:
     return {"ok": True, "polygons": _state.to_geojson()}
 
 
+# ---- Google Earth Engine ---------------------------------------------------
+#
+# These tools talk to Earth Engine on behalf of whatever user last completed
+# the OAuth flow in the browser (see gee.set_active_user, called from
+# app.py's /api/gee/auth/callback). The MCP transport has no HTTP session,
+# so we deliberately use a single global active user — right trade-off for
+# a single-user localhost app.
+
+
+@mcp.tool()
+def gee_status() -> dict:
+    """Report whether anyone is signed in to Earth Engine.
+
+    Useful for the agent to check before calling the heavier tools, and
+    for debugging the OAuth flow.
+    """
+    from . import gee
+
+    user = gee.get_active_user()
+    return {
+        "logged_in": user is not None,
+        "email": user.email if user else None,
+    }
+
+
+@mcp.tool()
+def gee_search_sentinel2(
+    bbox: list[float],
+    date_from: str,
+    date_to: str,
+    cloud_max: float = 20.0,
+    limit: int = 20,
+) -> list[dict]:
+    """Search Sentinel-2 (Level-2A) scenes intersecting a bounding box.
+
+    bbox: [west, south, east, north] in EPSG:4326 (lon/lat degrees).
+    date_from, date_to: ISO dates, e.g. "2024-07-01".
+    cloud_max: maximum scene cloud cover percentage (0-100).
+    limit: cap on returned scenes.
+
+    Returns a list of {id, date, cloud_cover, satellite, tile}. Requires
+    that the user has signed in with Google in the browser first — call
+    gee_status to check.
+    """
+    from . import gee
+
+    try:
+        gee._require_ee()
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    return gee.search_sentinel2(
+        bbox=bbox,
+        date_from=date_from,
+        date_to=date_to,
+        cloud_max=cloud_max,
+        limit=limit,
+    )
+
+
+@mcp.tool()
+def gee_extract_glaciers(
+    bbox: list[float],
+    scene_id: str,
+    ndsi_threshold: float = 0.4,
+    min_area_px: int = 50,
+) -> list[list[list[float]]]:
+    """Extract glacier outlines from a Sentinel-2 scene via NDSI.
+
+    bbox: [west, south, east, north] in EPSG:4326.
+    scene_id: a scene id from gee_search_sentinel2.
+    ndsi_threshold: NDSI cutoff (0.4 conservative, 0.5 stricter).
+    min_area_px: drop specks smaller than this many 10 m pixels.
+
+    Returns a list of rings; each ring is a list of [lon, lat] vertices.
+    This tool only *returns* the geometry — call gee_add_glaciers_to_map
+    to actually draw them in the editor.
+    """
+    from . import gee
+
+    try:
+        gee._require_ee()
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    return gee.extract_glacier_contours(
+        bbox=bbox,
+        scene_id=scene_id,
+        ndsi_threshold=ndsi_threshold,
+        min_area_px=min_area_px,
+    )
+
+
+@mcp.tool()
+def gee_add_glaciers_to_map(
+    bbox: list[float],
+    scene_id: str,
+    ndsi_threshold: float = 0.4,
+    min_area_px: int = 50,
+    name_prefix: str = "gee_glacier",
+) -> dict:
+    """One-shot: detect glaciers and add them to the shared PolygonState.
+
+    Equivalent to gee_extract_glaciers + add_polygon per ring, but done in
+    a single MCP call. After this returns, the new outlines are visible in
+    the map UI and in list_polygons.
+
+    Returns {ok, added, start_index, total}.
+    """
+    from shapely.geometry import Polygon as _ShapelyPolygon
+
+    from . import gee
+
+    try:
+        gee._require_ee()
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+
+    rings = gee.extract_glacier_contours(
+        bbox=bbox,
+        scene_id=scene_id,
+        ndsi_threshold=ndsi_threshold,
+        min_area_px=min_area_px,
+    )
+    if not rings:
+        return {
+            "ok": True,
+            "added": 0,
+            "start_index": len(_state),
+            "total": len(_state),
+        }
+
+    start_index = len(_state)
+    added = 0
+    for i, ring in enumerate(rings):
+        try:
+            poly = _ShapelyPolygon(ring)
+        except Exception:  # noqa: BLE001 — bad ring, skip
+            continue
+        if not poly.is_valid or poly.area <= 0:
+            continue
+        _state.add_polygon(poly, name=f"{name_prefix}_{i + 1}")
+        added += 1
+
+    return {
+        "ok": True,
+        "added": added,
+        "start_index": start_index,
+        "total": len(_state),
+    }
+
+
 def run(host: str = "127.0.0.1", port: int = 8766) -> None:
     """Start the streamable-http MCP server on ``host:port``."""
     mcp.settings.host = host
