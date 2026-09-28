@@ -42,6 +42,8 @@ from . import io as gio
 from .server import get_state
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
+CAPTURES_DIR = Path(__file__).resolve().parents[2] / "captures"
+CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="glacier-mcp")
 
