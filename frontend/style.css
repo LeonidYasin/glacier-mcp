@@ -605,12 +605,22 @@ body.sidebar-collapsed #sidebar {
 
 #map {
   position: absolute;
-  /* Leave room for BOTH toolbars: 40px top + 44px bottom. */
-  inset: 40px 0 44px 0;
+  /* Leave room for the topbar (40 px), the sidebar (--sidebar-w on the
+     left) and the polygon panel (44 px at the bottom). */
+  top: var(--topbar-h, 40px);
+  left: var(--sidebar-w, 260px);
+  right: 0;
+  bottom: 44px;
   background: #111;
   /* Shift+drag must pan the map, not select text in the browser. */
   user-select: none;
   -webkit-user-select: none;
+  transition: left 0.15s ease;
+}
+
+/* When the sidebar is collapsed the map reclaims the full width. */
+body.sidebar-collapsed #map {
+  left: 0;
 }
 
 /* Keep raster pixels sharp on zoom-in.
