@@ -706,7 +706,13 @@ async def ws_endpoint(ws: WebSocket) -> None:
     )
     try:
         while True:
-            await ws.receive_text()
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(msg, dict) and msg.get("type") == "capture_map_response":
+                hub.resolve_capture(msg.get("request_id") or "", msg)
     except WebSocketDisconnect:
         await hub.disconnect(ws)
 
