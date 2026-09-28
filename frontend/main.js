@@ -341,7 +341,12 @@ function makeScaleLineDraggable() {
 
   const onPointerDown = (evt) => {
     if (evt.button !== 0) return; // left button only
+    // CRITICAL: OL attaches its own pointerdown on the map viewport and
+    // uses it to start a map pan. Without stopping propagation here, that
+    // handler runs first (or alongside) and swallows the gesture — the
+    // scale bar never moves. preventDefault also stops text selection.
     evt.preventDefault();
+    evt.stopPropagation();
     dragging = true;
     const rect = el.getBoundingClientRect();
     grabDx = evt.clientX - rect.left;
@@ -356,6 +361,7 @@ function makeScaleLineDraggable() {
 
   const onPointerMove = (evt) => {
     if (!dragging) return;
+    evt.stopPropagation();
     const vpRect = viewport.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
     // Position of the element's top-left corner relative to the map.
@@ -375,6 +381,7 @@ function makeScaleLineDraggable() {
 
   const endDrag = (evt) => {
     if (!dragging) return;
+    evt.stopPropagation();
     dragging = false;
     el.classList.remove("ol-scale-line-dragging");
     try {
@@ -384,7 +391,10 @@ function makeScaleLineDraggable() {
     }
   };
 
-  el.addEventListener("pointerdown", onPointerDown);
+  // capture:true on pointerdown so OUR handler runs before OL's viewport
+  // listener — otherwise OL starts a map pan first and we never see the
+  // gesture. The other listeners stay in the bubbling phase.
+  el.addEventListener("pointerdown", onPointerDown, { capture: true });
   el.addEventListener("pointermove", onPointerMove);
   el.addEventListener("pointerup", endDrag);
   el.addEventListener("pointercancel", endDrag);
