@@ -404,6 +404,17 @@ function applyCollectionFromServer(msg) {
 // button enables only when something is selected. The chip row scrolls
 // horizontally when there are more glaciers than fit on screen.
 
+// Build a FeatureCollection-shaped object from the current vector source.
+// Used when we need to re-render chips outside of applyCollectionFromServer
+// (e.g. after a map click changed the selection).
+function currentCollection() {
+  const features = vectorSource.getFeatures().map((f) => ({
+    type: "Feature",
+    properties: { index: f.get("index"), name: f.get("name") },
+  }));
+  return { type: "FeatureCollection", features };
+}
+
 function renderPolygonChips(fc) {
   const host = document.getElementById("polygon-chips");
   if (!host) return;
