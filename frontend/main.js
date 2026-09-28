@@ -79,9 +79,18 @@ function setInfo(text) {
 // ---- Feature styling ------------------------------------------------------
 //
 // Selected polygon: thick white halo + bright fill, so it is unmistakable.
-// Unselected: thin coloured outline + a *translucent* fill so the whole area
-// is clickable (a fully transparent fill means clicks only land on the line,
-// which made selection feel broken).
+// Unselected: coloured outline + a coloured fill at 20% alpha. The fill
+// MUST have a solid (non-white) colour and enough alpha, otherwise
+// OpenLayers hit-detection treats interior pixels as transparent and a
+// click inside the polygon does not select it (only clicks on the line did).
+
+function _rgba(hex, alpha) {
+  // hex like "#00e0ff" -> "rgba(0,224,255,alpha)"
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function styleForFeature(feature) {
   const idx = feature.get("index");
@@ -90,13 +99,13 @@ function styleForFeature(feature) {
 
   if (isSelected) {
     return new ol.style.Style({
-      stroke: new ol.style.Stroke({ color: "#ffffff", width: 4 }),
-      fill: new ol.style.Fill({ color: "rgba(255,255,255,0.35)" }),
+      stroke: new ol.style.Stroke({ color: "#ffffff", width: 5 }),
+      fill: new ol.style.Fill({ color: _rgba(color, 0.45) }),
     });
   }
   return new ol.style.Style({
     stroke: new ol.style.Stroke({ color, width: 2 }),
-    fill: new ol.style.Fill({ color: "rgba(255,255,255,0.08)" }),
+    fill: new ol.style.Fill({ color: _rgba(color, 0.20) }),
   });
 }
 
