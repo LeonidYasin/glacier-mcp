@@ -34,6 +34,12 @@ dependencies = [
     "pydantic>=2.6",
     "pillow>=10.0",
     "python-multipart>=0.0.9",
+    # python-dotenv loads .env.local / .env into os.environ at startup so
+    # that the Google OAuth client_id / client_secret (gitignored) reach
+    # glacier_mcp.gee without ever appearing in the repository. See
+    # src/glacier_mcp/__main__.py — the two load_dotenv() calls run BEFORE
+    # any module that reads os.environ is imported.
+    "python-dotenv>=1.0",
     # titiler: production-ready COG tile server. Handles large rasters
     # (>4096 px), mosaics, multi-layer overlays, and arbitrary CRSs — the
     # pieces we tried to build by hand. Exposes a ready FastAPI router
