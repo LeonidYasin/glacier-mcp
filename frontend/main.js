@@ -674,12 +674,40 @@ function applyGeoTiffToMap(meta) {
   const width = Math.abs(extent[2] - extent[0]);
   const height = Math.abs(extent[3] - extent[1]);
 
+  // ---- Raster basemap via titiler (COG tile server) ---------------------
+  //
+  // Instead of a single preview.png we now ask titiler for tiles. titiler
+  // picks the right overview level per zoom, reprojects to the tile grid
+  // CRS, and returns a 256x256 PNG per request. This scales to Sentinel-2
+  // scenes and mosaics: the browser only fetches the tiles it shows.
+  //
+  // We use the standard WebMercatorQuad tile grid. The map itself stays in
+  // the raster's CRS (so the polygons keep their native coordinates);
+  // OpenLayers reprojects the 3857 tiles on the fly.
+  const TILE_CRS = "EPSG:3857";
+  // Standard OL tile grid for 3857 with a 256-px tile size.
+  const tileGrid3857 = ol.tilegrid.createXYZ({
+    projection: TILE_CRS,
+    maxZoom: 22,
+    tileSize: 256,
+  });
+
   if (rasterLayer) map.removeLayer(rasterLayer);
-  rasterLayer = new ol.layer.Image({
-    source: new ol.source.ImageStatic({
-      url: `${BACKEND}/api/geotiff/${meta.id}/preview.png`,
-      imageExtent: extent,
-      projection,
+  rasterLayer = new ol.layer.Tile({
+    source: new ol.source.TileImage({
+      projection: TILE_CRS,
+      tileGrid: tileGrid3857,
+      crossOrigin: "anonymous",
+      tileUrlFunction: (tileCoord) => {
+        // TileCoord is [z, x, y] with OL's y already flipped to top-down
+        // inside the tile grid. We can pass it straight to titiler's XYZ
+        // endpoint — no manual y flip needed here.
+        const [z, x, y] = tileCoord;
+        return (
+          `${BACKEND}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png` +
+          `?url=${encodeURIComponent(cogPath)}`
+        );
+      },
     }),
   });
   map.getLayers().insertAt(0, rasterLayer);
