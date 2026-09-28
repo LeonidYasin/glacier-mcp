@@ -473,6 +473,8 @@ function renderPolygonChips(fc) {
     host.appendChild(chip);
   });
   updateDeleteButton();
+  // Keep the modal table in sync — it may be open right now.
+  renderModalTable(fc);
 }
 
 function updateDeleteButton() {
