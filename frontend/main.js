@@ -931,6 +931,20 @@ function updateHudView() {
   hudEls.resolution.textContent =
     res === undefined ? "—" : res.toExponential(3);
   hudEls.center.textContent = `[${hudFmt(c[0])}, ${hudFmt(c[1])}]`;
+  // Scale denominator in GIS notation. A CSS pixel is 1/96 inch, i.e.
+  // 0.0254/96 metres on a 96-dpi reference display. resolution is metres
+  // per screen pixel, so the classical "scale denominator" (the N in
+  // 1:N, i.e. how many metres on the ground equals 1 metre on the map)
+  // is resolution / (0.0254/96) = resolution * 96 / 0.0254. We show it as
+  // "1 cm = X m", which is the more intuitive form: how many metres does
+  // one centimetre on the screen represent.
+  if (hudEls.scale && res !== undefined && res > 0) {
+    const scaleDenom = (res * 96) / 0.0254; // 1 : scaleDenom
+    const metresPerCm = scaleDenom / 100;   // 1 cm = metresPerCm m
+    hudEls.scale.textContent = `1 cm = ${metresPerCm.toFixed(1)} m`;
+  } else if (hudEls.scale) {
+    hudEls.scale.textContent = "—";
+  }
   if (hudEls.resLimits) {
     const maxR = view.getMaxResolution();
     const minR = view.getMinResolution();
