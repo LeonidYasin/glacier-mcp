@@ -425,6 +425,38 @@ def export_shapefile_endpoint(payload: dict | None = None) -> Response:
         pass
 
 
+@app.get("/api/geotiff/{entry_id}/tile/{z}/{x}/{y}.png")
+def geotiff_tile(entry_id: str, z: int, x: int, y: int) -> Response:
+    """Serve one tile of the source raster, cut in the raster's own CRS.
+
+    The tile grid is defined the same way as on the frontend side:
+
+      * ``z = 0`` — the whole raster in a single 256x256 tile,
+      * ``z = N`` — ``2**N`` by ``2**N`` tiles,
+      * ``(0, 0)`` at the raster's top-left corner,
+      * rows increase downwards (matching rasterio).
+
+    Tiles outside the raster are a transparent PNG so the client can
+    request them without 404s when panning near the edge.
+    """
+    entry = _geotiffs.get(entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Unknown GeoTIFF id.")
+    try:
+        png = gio.render_tile_png(entry.raster.path, z=z, x=x, y=y, tile_size=256)
+    except gio.IOError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        # zoom out of range from render_tile_png
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Cache aggressively: tiles are immutable for a given (id, z, x, y).
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400, immutable"},
+    )
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await hub.connect(ws)
