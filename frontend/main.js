@@ -725,10 +725,18 @@ function applyGeoTiffToMap(meta) {
         // inside the tile grid. We can pass it straight to titiler's XYZ
         // endpoint — no manual y flip needed here.
         const [z, x, y] = tileCoord;
-        return (
+        let url =
           `${BACKEND}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}.png` +
-          `?url=${encodeURIComponent(cogPath)}`
-        );
+          `?url=${encodeURIComponent(cogPath)}`;
+        // rio-tiler 9.x sometimes fails to read a GeoTIFF's CRS through its
+        // own Reader when the file's WKT1 lacks a root-level AUTHORITY
+        // node. The result is `image.crs = None` and a 500 from titiler's
+        // CRS_to_uri. Passing `crs=` explicitly overrides whatever the
+        // reader inferred — we already have the EPSG code from upload.
+        if (meta.crs_epsg) {
+          url += `&crs=EPSG:${meta.crs_epsg}`;
+        }
+        return url;
       },
     }),
   });
