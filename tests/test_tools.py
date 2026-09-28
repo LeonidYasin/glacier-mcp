@@ -10,7 +10,10 @@ from __future__ import annotations
 import pytest
 from shapely.geometry import Polygon
 
-from glacier_mcp import tools
+# The MCP tools live in glacier_mcp.server (the FastMCP app), not in
+# glacier_mcp.tools (an old single-polygon stub). Alias server as `tools`
+# so the calls below read naturally.
+from glacier_mcp import server as tools
 from glacier_mcp.geometry import GeometryError
 from glacier_mcp.state import PolygonState, StateError
 
