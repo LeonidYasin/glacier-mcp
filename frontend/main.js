@@ -63,7 +63,11 @@ function setStatus(text) {
 }
 
 function setInfo(text) {
-  if (infoSpan) infoSpan.textContent = text;
+  if (!infoSpan) return;
+  infoSpan.textContent = text;
+  // The toolbar row is narrow on small windows and truncates with ellipsis;
+  // mirror the full text into title= so hovering shows it in a native tooltip.
+  infoSpan.title = text;
 }
 
 // ---- Initialisation -------------------------------------------------------
