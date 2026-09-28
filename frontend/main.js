@@ -132,16 +132,34 @@ function initMap() {
     }),
   });
 
+  // Two interactions, but only one active at a time — like QGIS. Starting in
+  // SELECT mode means a plain click never accidentally starts a new polygon
+  // (which was the root cause of "click draws instead of selects").
   draw = new ol.interaction.Draw({ source: vectorSource, type: "Polygon" });
   modify = new ol.interaction.Modify({ source: vectorSource });
-  map.addInteraction(draw);
+  // Modify (vertex drag) stays on always; Draw is toggled by the toolbar.
   map.addInteraction(modify);
+  draw.setActive(false);
+  map.addInteraction(draw);
 
-  // New polygon drawn by the user.
+  // New polygon drawn by the user. After finish, drop out of draw mode.
+  draw.on("drawstart", () => {
+    // Guard against a degenerate second click starting a new polygon.
+    setStatus("drawing — click to add vertices, double-click to finish (Esc to cancel)");
+  });
   draw.on("drawend", (evt) => {
     const feature = evt.feature;
-    // The backend assigns the index; we optimistically fetch it after POST.
+    // Validate locally before sending: an empty/self-intersecting polygon
+    // makes the backend return 400 and leaves a ghost feature on the map.
+    const ok = isValidDrawnPolygon(feature.getGeometry());
+    if (!ok) {
+      vectorSource.removeFeature(feature);
+      setStatus("invalid polygon (needs >=3 vertices and non-zero area) — discarded");
+      setDrawMode(false);
+      return;
+    }
     sendAddPolygon(feature.getGeometry());
+    setDrawMode(false);
   });
 
   // Vertex dragged.
