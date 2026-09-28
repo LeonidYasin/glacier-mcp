@@ -1550,6 +1550,7 @@ function initGeeBasemap() {
 // ---- Boot -----------------------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", () => {
+  initSidebar();
   initMap();
   wireButtons();
   installHud();
