@@ -662,6 +662,28 @@ function applyGeoTiffToMap(meta) {
   // because their coordinates would be meaningless in the new projection.
   const crsChanged = crsCode !== currentCrsCode;
 
+  // Ask the backend for the path of the source GeoTIFF on disk. titiler
+  // reads directly from that file when serving tiles.
+  // We do a synchronous XHR here only because applyGeoTiffToMap is called
+  // from a non-async code path and we need the path before building the
+  // tile layer. Local single-user tool, so a sync request is acceptable.
+  let cogPath = null;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", `${BACKEND}/api/geotiff/${meta.id}/cog-url`, false);
+    xhr.send(null);
+    if (xhr.status === 200) {
+      cogPath = JSON.parse(xhr.responseText).url;
+    } else {
+      throw new Error(`${xhr.status} ${xhr.statusText}`);
+    }
+  } catch (err) {
+    throw new Error(`Could not obtain COG path from backend: ${err.message || err}`);
+  }
+  if (!cogPath) {
+    throw new Error("Backend returned no COG path — cannot build the tile layer.");
+  }
+
   // Build a tile grid in the raster's OWN CRS. z=0 is a single tile for
   // Use a single ImageStatic rather than an XYZ tile pyramid.
   //
