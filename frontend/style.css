@@ -5,12 +5,28 @@ body {
   font-family: system-ui, sans-serif;
 }
 
-#toolbar {
+/* ---- Layout: top bar + collapsible left sidebar --------------------------
+ *
+ * We deliberately do NOT use a single overflowing toolbar row: as tools
+ * accumulate (GEE search, basemap presets, …) a one-line bar silently
+ * clips them off the right edge. Instead:
+ *   #topbar  — identity + status chips, always visible, 40 px tall
+ *   #sidebar — all the controls, grouped in titled sections, collapsible
+ *   #map     — fills whatever is left
+ * The sidebar width is driven by --sidebar-w so collapsing is a single
+ * custom-property change.
+ */
+:root {
+  --topbar-h: 40px;
+  --sidebar-w: 260px;
+}
+
+#topbar {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 40px;
+  height: var(--topbar-h);
   padding: 0 12px;
   background: #1e1e1e;
   color: #ddd;
@@ -18,13 +34,124 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  z-index: 10;
+  z-index: 30;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
   box-sizing: border-box;
-  overflow: hidden;
 }
 
-#toolbar .btn {
+#app-title {
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
+.icon-btn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  line-height: 30px;
+  padding: 0;
+  text-align: center;
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: #374151;
+}
+
+/* Sidebar ---------------------------------------------------------------- */
+
+#sidebar {
+  position: absolute;
+  top: var(--topbar-h);
+  bottom: 0;
+  left: 0;
+  width: var(--sidebar-w);
+  padding: 12px;
+  background: #1a202c;
+  color: #cbd5e0;
+  font-size: 13px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: 1px 0 4px rgba(0, 0, 0, 0.4);
+  transition: width 0.15s ease, padding 0.15s ease;
+}
+
+/* Collapsed: keep a thin rail so the toggle stays reachable. */
+body.sidebar-collapsed #sidebar {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.side-section {
+  margin-bottom: 18px;
+}
+
+.side-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #718096;
+  border-bottom: 1px solid #2d3748;
+  padding-bottom: 4px;
+}
+
+.side-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.side-label {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: #a0aec0;
+}
+
+.side-select,
+.side-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+  border-radius: 4px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.side-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.side-select:focus,
+.side-input:focus {
+  outline: none;
+  border-color: #2b6cb0;
+}
+
+#sidebar input[type="range"] {
+  width: 100%;
+  accent-color: #2f855a;
+  cursor: pointer;
+}
+
+.btn, #toolbar .btn {
   /* Do not grow, do not shrink: fixed-size control. */
   flex: 0 0 auto;
   display: inline-block;
@@ -40,7 +167,7 @@ body {
   white-space: nowrap;
 }
 
-#toolbar .btn:hover {
+.btn:hover, #toolbar .btn:hover {
   background: #2c5282;
 }
 
@@ -56,22 +183,22 @@ body {
 }
 
 /* Secondary button (Undo / Redo): outlined, muted. */
-#toolbar .btn.btn-secondary {
+.btn.btn-secondary, #toolbar .btn.btn-secondary {
   background: transparent;
   border: 1px solid #4a5568;
   color: #cbd5e0;
 }
 
-#toolbar .btn.btn-secondary:hover {
+.btn.btn-secondary:hover, #toolbar .btn.btn-secondary:hover {
   background: #2d3748;
 }
 
 /* Accent button (Export): green, distinct from Load. */
-#toolbar .btn.btn-accent {
+.btn.btn-accent, #toolbar .btn.btn-accent {
   background: #2f855a;
 }
 
-#toolbar .btn.btn-accent:hover {
+.btn.btn-accent:hover, #toolbar .btn.btn-accent:hover {
   background: #276749;
 }
 
@@ -80,6 +207,74 @@ body {
   cursor: pointer;
   border: none;
   font-family: inherit;
+}
+
+/* ---- GEE basemap controls ------------------------------------------------- */
+
+/* Small caption in front of a control ("Basemap", "Opacity"). */
+#toolbar .toolbar-label {
+  flex: 0 0 auto;
+  color: #a0aec0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Vertical divider between logical groups of controls. */
+#toolbar .toolbar-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  background: #4a5568;
+  margin: 0 4px;
+}
+
+/* Preset dropdown — same footprint as .btn.btn-secondary. */
+#toolbar select.btn {
+  height: 28px;
+  padding: 0 8px;
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+#toolbar select.btn:hover {
+  background: #374151;
+}
+
+/* Scene-id field. Kept fairly wide so a full Sentinel-2 id is visible. */
+#toolbar .toolbar-input {
+  flex: 0 1 320px;
+  min-width: 120px;
+  height: 26px;
+  padding: 0 8px;
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+#toolbar .toolbar-input::placeholder {
+  color: #718096;
+}
+
+#toolbar .toolbar-input:focus {
+  outline: none;
+  border-color: #2b6cb0;
+}
+
+/* Opacity slider — narrow, sits between two labels. */
+#toolbar input[type="range"]#gee-basemap-opacity {
+  flex: 0 0 auto;
+  width: 90px;
+  accent-color: #2f855a;
+  cursor: pointer;
 }
 
 /* Hide the native file input; the <label> is the visible control. */
@@ -410,12 +605,22 @@ body {
 
 #map {
   position: absolute;
-  /* Leave room for BOTH toolbars: 40px top + 44px bottom. */
-  inset: 40px 0 44px 0;
+  /* Leave room for the topbar (40 px), the sidebar (--sidebar-w on the
+     left) and the polygon panel (44 px at the bottom). */
+  top: var(--topbar-h, 40px);
+  left: var(--sidebar-w, 260px);
+  right: 0;
+  bottom: 44px;
   background: #111;
   /* Shift+drag must pan the map, not select text in the browser. */
   user-select: none;
   -webkit-user-select: none;
+  transition: left 0.15s ease;
+}
+
+/* When the sidebar is collapsed the map reclaims the full width. */
+body.sidebar-collapsed #map {
+  left: 0;
 }
 
 /* Keep raster pixels sharp on zoom-in.

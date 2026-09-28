@@ -8,16 +8,80 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <div id="toolbar">
-      <label for="geotiff-file" class="btn">Load GeoTIFF</label>
-      <input type="file" id="geotiff-file" accept=".tif,.tiff" />
-      <button type="button" id="btn-draw" class="btn">Draw new polygon</button>
-      <button type="button" id="btn-undo" class="btn btn-secondary" title="Undo last edit">Undo</button>
-      <button type="button" id="btn-redo" class="btn btn-secondary" title="Redo last undone edit">Redo</button>
-      <button type="button" id="btn-export" class="btn btn-accent" title="Download shapefile (ZIP)">Export shapefile</button>
+    <!-- Top bar: identity + status only. All controls live in the sidebar
+         so they can never overflow off-screen. -->
+    <header id="topbar">
+      <button type="button" id="sidebar-toggle" class="icon-btn"
+              title="Show / hide the tool sidebar (B)" aria-label="Toggle sidebar">☰</button>
+      <span id="app-title">glacier-mcp</span>
+      <span id="gee-status" title="Google Earth Engine sign-in status">GEE: not signed in</span>
       <span id="geotiff-info">No raster loaded — draw polygons, then export.</span>
       <span id="status">loading...</span>
-    </div>
+    </header>
+
+    <!-- Collapsible tool sidebar. Sections are titled and spaced so the
+         panel stays readable as tools accumulate. -->
+    <aside id="sidebar">
+      <section class="side-section">
+        <h2 class="side-title">Raster</h2>
+        <div class="side-row">
+          <label for="geotiff-file" class="btn">Load GeoTIFF</label>
+          <input type="file" id="geotiff-file" accept=".tif,.tiff" />
+        </div>
+        <div class="side-row">
+          <button type="button" id="btn-export" class="btn btn-accent"
+                  title="Download shapefile (ZIP)">Export shapefile</button>
+        </div>
+      </section>
+
+      <section class="side-section">
+        <h2 class="side-title">Edit</h2>
+        <div class="side-row">
+          <button type="button" id="btn-draw" class="btn">Draw new polygon</button>
+        </div>
+        <div class="side-row">
+          <button type="button" id="btn-undo" class="btn btn-secondary"
+                  title="Undo last edit">Undo</button>
+          <button type="button" id="btn-redo" class="btn btn-secondary"
+                  title="Redo last undone edit">Redo</button>
+        </div>
+      </section>
+
+      <section class="side-section">
+        <h2 class="side-title">Google Earth Engine</h2>
+        <div class="side-row">
+          <button type="button" id="btn-gee-login" class="btn btn-accent"
+                  title="Sign in with your Google account to use Earth Engine">Sign in with Google</button>
+          <button type="button" id="btn-gee-logout" class="btn btn-secondary"
+                  title="Sign out of Google Earth Engine" hidden>Sign out</button>
+        </div>
+
+        <!-- Basemap: draw a real Sentinel-2 image under the polygons.
+             The preset dropdown is populated from /api/gee/basemap/presets;
+             the scene id is auto-filled when the agent pushes a layer. -->
+        <label class="side-label" for="gee-basemap-preset">Basemap preset</label>
+        <select id="gee-basemap-preset" class="side-select"
+                title="Sentinel-2 visualisation preset">
+          <option value="">— none —</option>
+        </select>
+
+        <label class="side-label" for="gee-basemap-scene">Scene id</label>
+        <input type="text" id="gee-basemap-scene" class="side-input"
+               placeholder="20240928T..._T37TGJ"
+               title="Sentinel-2 scene id — filled in automatically when you pick a scene" />
+
+        <label class="side-label" for="gee-basemap-opacity">Opacity</label>
+        <input type="range" id="gee-basemap-opacity" min="0" max="1" step="0.05" value="1"
+               title="Basemap opacity" />
+
+        <div class="side-row">
+          <button type="button" id="btn-gee-basemap-apply" class="btn btn-accent"
+                  title="Load the selected Sentinel-2 scene as the map basemap">Load basemap</button>
+          <button type="button" id="btn-gee-basemap-clear" class="btn btn-secondary"
+                  title="Remove the GEE basemap" hidden>Clear</button>
+        </div>
+      </section>
+    </aside>
 
     <div id="map"></div>
 

@@ -16,13 +16,16 @@ import asyncio
 import base64
 import io as stdlib_io
 import json
+import secrets
 import shutil
 import tempfile
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+from pydantic import BaseModel
 # titiler: production COG tile server used by NASA Worldview / FIRMS. It
 # reads the source GeoTIFF through rasterio, picks the right overview for
 # the requested zoom, resamples to 256x256, and returns a PNG. Handles
@@ -34,10 +37,24 @@ from titiler.core.factory import TilerFactory as _CogTilerFactory
 from rio_tiler.errors import TileOutsideBounds as _TileOutsideBounds
 from rio_tiler.io.rasterio import Reader as _RioReader
 from rio_tiler.models import ImageData as _ImageData
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 
+from . import gee
 from . import io as gio
 from .server import get_state
 
@@ -189,6 +206,11 @@ class _Hub:
         self._lock = asyncio.Lock()
         # request_id -> Future[dict] set by resolve_capture()
         self._pending: dict[str, asyncio.Future] = {}
+        # The event loop this hub lives on. MCP tools run in a worker
+        # thread (FastMCP executes sync tools off-loop), so they cannot
+        # await a coroutine directly — they schedule it here with
+        # asyncio.run_coroutine_threadsafe. Set once at app startup.
+        self.loop: asyncio.AbstractEventLoop | None = None
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -206,7 +228,7 @@ class _Hub:
         for ws in clients:
             try:
                 await ws.send_text(json.dumps(payload))
-            except Exception:
+            except Exception:  # noqa: BLE001 — dead socket, prune below
                 dead.append(ws)
         if dead:
             async with self._lock:
@@ -252,8 +274,33 @@ class _Hub:
         if fut is not None and not fut.done():
             fut.set_result(payload)
 
+    async def push_gee_basemap(self, payload: dict) -> int:
+        """Push a GEE basemap layer to every connected browser tab.
+
+        The agent calls ``gee_get_basemap`` (MCP), which resolves an XYZ
+        tile URL on the server; this method then hands that URL to the
+        open map tab so the layer actually appears *without the user
+        having to click anything*. Same fire-and-forget pattern as
+        ``broadcast`` — there is no reply, because the browser does not
+        need to acknowledge the layer swap.
+
+        Returns the number of tabs the message reached (0 = no tab open,
+        which the caller may want to report back to the agent).
+        """
+        async with self._lock:
+            n = len(self._clients)
+        await self.broadcast({"type": "gee_basemap", **payload})
+        return n
+
 
 hub = _Hub()
+
+
+@app.on_event("startup")
+async def _remember_hub_loop() -> None:
+    """Remember the event loop so worker-thread MCP tools can schedule
+    coroutines on it (see _Hub.push_gee_basemap)."""
+    hub.loop = asyncio.get_running_loop()
 
 
 async def _broadcast_state() -> None:
@@ -476,11 +523,11 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
     # proj4js 2.x does not parse WKT2, only WKT1_GDAL or raw proj4.
     try:
         crs_wkt = raster.crs.to_wkt(version="WKT1_GDAL")
-    except Exception:
+    except Exception:  # noqa: BLE001 — fall back to whatever WKT version works
         crs_wkt = raster.crs.to_wkt()
     try:
         crs_proj4 = raster.crs.to_proj4()
-    except Exception:
+    except Exception:  # noqa: BLE001 — proj4 is optional metadata, empty is fine
         crs_proj4 = ""
 
     meta = {
@@ -688,6 +735,252 @@ def geotiff_viewport(
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=5"},
     )
+
+
+# ---- Google Earth Engine OAuth --------------------------------------------
+#
+# The flow, from the browser's point of view:
+#
+#   1. UI clicks "Sign in with Google" -> GET /api/gee/auth/start
+#   2. We 302 the browser to google.com with our client_id + a random
+#      `state` (CSRF guard).
+#   3. The user signs in *as themselves* on Google and approves access.
+#   4. Google redirects back to /api/gee/auth/callback?code=...&state=...
+#   5. We verify `state`, exchange `code` for a refresh token, stash the
+#      credentials in `_gee_sessions`, and redirect back to the map.
+#
+# Where does `state` live? In-process, NOT in a cookie. We initially used
+# a short-lived cookie, but modern Chrome refuses to send SameSite=Lax
+# cookies on the cross-site navigation from google.com back to
+# 127.0.0.1, which broke every login with 'state mismatch'. An in-memory
+# dict sidesteps the whole SameSite story and is fine for a single-user
+# localhost app — the process owns the state from /start to /callback.
+#
+# The client_id / client_secret are the *application's* identity with
+# Google (see src/glacier_mcp/gee.py for details); they are read from the
+# environment and never touch the repository.
+_GEE_STATE_TTL_S = 600  # 10 minutes to complete the consent screen
+
+#: request state (str) -> (monotonic timestamp, live Flow object).
+#:
+#: We keep the Flow here because google-auth-oauthlib's Flow uses PKCE:
+#: the code_verifier lives inside the Flow that created the
+#: authorization_url, and finish_auth_flow must reuse that same Flow on
+#: the callback. Rebuilding a fresh Flow yields
+#: '(invalid_grant) Missing code verifier' from Google.
+_gee_states: dict[str, tuple[float, Any]] = {}
+
+#: session id (str) -> signed-in user. Cleared on logout / process exit.
+_gee_sessions: dict[str, gee.UserCredentials] = {}
+
+
+def _remember_flow(state: str, flow: Any) -> None:
+    """Register a Flow under ``state``, sweeping expired entries first.
+
+    Storing the Flow (not just its id) is what makes PKCE work: the
+    Flow holds the ephemeral ``code_verifier`` that Google expects on the
+    token endpoint. If we created a new Flow in the callback, Google
+    would answer ``(invalid_grant) Missing code verifier``.
+    """
+    import time as _time
+
+    now = _time.monotonic()
+    for k, (ts, _f) in list(_gee_states.items()):
+        if now - ts > _GEE_STATE_TTL_S:
+            _gee_states.pop(k, None)
+    _gee_states[state] = (now, flow)
+
+
+def _take_flow(state: str | None) -> Any | None:
+    """Return the Flow registered under ``state`` (or None) and drop it."""
+    import time as _time
+
+    if not state:
+        return None
+    item = _gee_states.pop(state, None)
+    if item is None:
+        return None
+    ts, flow = item
+    if (_time.monotonic() - ts) > _GEE_STATE_TTL_S:
+        return None
+    return flow
+
+
+def _gee_session_id(request: Request) -> str | None:
+    """Return the caller's session id from the cookie, or None."""
+    return request.cookies.get("glacier_session")
+
+
+def get_gee_user(request: Request) -> gee.UserCredentials | None:
+    """Resolve the currently signed-in Earth Engine user, if any.
+
+    Exported for ``server.py`` so the MCP tools can look up the session
+    that the browser established without duplicating the cookie logic.
+    """
+    sid = _gee_session_id(request)
+    if not sid:
+        return None
+    return _gee_sessions.get(sid)
+
+
+@app.get("/api/gee/auth/start")
+def gee_auth_start() -> RedirectResponse:
+    """Kick off the OAuth dance: redirect the browser to Google.
+
+    We keep the live ``Flow`` object in ``_gee_states`` because it carries
+    the PKCE ``code_verifier`` that must be sent back on the callback.
+    We deliberately do NOT set a cookie for state: modern Chrome drops
+    SameSite=Lax cookies on the cross-site navigation from google.com
+    back to 127.0.0.1, so a cookie here would break on every callback.
+    """
+    state = secrets.token_urlsafe(24)
+    try:
+        url, flow = gee.start_auth_flow(state=state)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    _remember_flow(state, flow)
+    return RedirectResponse(url=url)
+
+
+@app.get("/api/gee/auth/callback")
+def gee_auth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Google redirects here after the user approves (or denies) access."""
+    if error:
+        raise HTTPException(status_code=400, detail=f"Google returned error: {error}")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing 'code' from Google.")
+    flow = _take_flow(state)
+    if flow is None:
+        raise HTTPException(
+            status_code=400,
+            detail="OAuth 'state' mismatch — the sign-in link expired. Try again.",
+        )
+    try:
+        user = gee.finish_auth_flow(flow, code)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Token exchange failed: {exc}"
+        ) from exc
+
+    session_id = request.cookies.get("glacier_session") or secrets.token_urlsafe(24)
+    _gee_sessions[session_id] = user
+    # MCP tools run over a different transport and cannot read this session
+    # cookie, so we also record the user as globally "active" — for a
+    # single-user localhost app the last person to complete OAuth *is* the
+    # active user. set_active_user() also runs ee.Initialize for us.
+    gee.set_active_user(user)
+
+    response = RedirectResponse(url="/")
+    response.set_cookie(
+        "glacier_session",
+        session_id,
+        httponly=True,
+        samesite="lax",
+        max_age=86400,  # 24 hours
+    )
+    return response
+
+
+@app.get("/api/gee/auth/status")
+def gee_auth_status(request: Request) -> JSONResponse:
+    """Whether anyone is signed in, and as whom (best-effort)."""
+    user = get_gee_user(request)
+    return JSONResponse(
+        {
+            "logged_in": user is not None,
+            "email": user.email if user else None,
+        }
+    )
+
+
+@app.post("/api/gee/auth/logout")
+def gee_auth_logout(request: Request) -> JSONResponse:
+    """Forget the stored credentials for this session."""
+    sid = _gee_session_id(request)
+    if sid:
+        _gee_sessions.pop(sid, None)
+    # Mirror the callback: also drop the global active user so MCP tools
+    # immediately stop seeing credentials.
+    gee.set_active_user(None)
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("glacier_session")
+    return response
+
+
+# ---- GEE basemap ---------------------------------------------------------
+#
+# The endpoints below put a *real* Sentinel-2 image under the polygons.
+# The heavy lifting lives in gee.get_basemap(), which calls
+# ee.Image.getMapId() and returns an XYZ tile template that the browser
+# can feed straight into ol.source.XYZ. No Earth Engine JS API and no
+# OAuth in the browser — the tile URL is a plain public HTTPS endpoint
+# with a short-lived map id baked in.
+
+
+class GeeBasemapRequest(BaseModel):
+    """Body for ``POST /api/gee/basemap``.
+
+    ``vis_params`` is the escape hatch for custom band combinations: when
+    present it fully replaces ``preset``, which is what the UI sends after
+    the user edits the bands by hand.
+    """
+
+    scene_id: str
+    preset: str = "true_color"
+    vis_params: dict[str, Any] | None = None
+    bbox: list[float] | None = None
+    clip: bool = False
+
+
+@app.get("/api/gee/basemap/presets")
+def gee_basemap_presets_endpoint() -> JSONResponse:
+    """Catalogue of named basemap presets for the UI dropdown."""
+    try:
+        return JSONResponse({"presets": gee.basemap_presets()})
+    except Exception as exc:  # noqa: BLE001 — surface any import error to the UI
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/gee/basemap")
+def gee_basemap_endpoint(body: GeeBasemapRequest) -> JSONResponse:
+    """Return an XYZ tile URL for one Sentinel-2 scene.
+
+    The response is what the frontend needs to build an
+    ``ol.layer.Tile({source: new ol.source.XYZ({url: tile_url})})``::
+
+        {
+          "tile_url": "https://earthengine.googleapis.com/v1/.../{z}/{x}/{y}",
+          "map_id":   "projects/.../maps/...",
+          "token":    null,
+          "preset":   "true_color",
+          "scene_id": "20240928T080721_..._T37TGJ",
+          "band_names": ["B4", "B3", "B2"],
+          "index":    null,
+          "expires_in": 86400
+        }
+    """
+    try:
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    try:
+        result = gee.get_basemap(
+            scene_id=body.scene_id,
+            preset=body.preset,
+            vis_params=body.vis_params,
+            bbox=body.bbox,
+            clip=body.clip,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001 — Earth Engine errors go back verbatim
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    return JSONResponse(result)
 
 
 @app.websocket("/ws")

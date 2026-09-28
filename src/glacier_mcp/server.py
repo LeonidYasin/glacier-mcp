@@ -321,6 +321,254 @@ def redo() -> dict:
     return {"ok": True, "polygons": _state.to_geojson()}
 
 
+# ---- Google Earth Engine ---------------------------------------------------
+#
+# These tools talk to Earth Engine on behalf of whatever user last completed
+# the OAuth flow in the browser (see gee.set_active_user, called from
+# app.py's /api/gee/auth/callback). The MCP transport has no HTTP session,
+# so we deliberately use a single global active user — right trade-off for
+# a single-user localhost app.
+
+
+@mcp.tool()
+def gee_status() -> dict:
+    """Report whether anyone is signed in to Earth Engine.
+
+    Useful for the agent to check before calling the heavier tools, and
+    for debugging the OAuth flow.
+    """
+    from . import gee
+
+    user = gee.get_active_user()
+    return {
+        "logged_in": user is not None,
+        "email": user.email if user else None,
+    }
+
+
+@mcp.tool()
+def gee_search_sentinel2(
+    bbox: list[float],
+    date_from: str,
+    date_to: str,
+    cloud_max: float = 20.0,
+    limit: int = 20,
+) -> list[dict]:
+    """Search Sentinel-2 (Level-2A) scenes intersecting a bounding box.
+
+    bbox: [west, south, east, north] in EPSG:4326 (lon/lat degrees).
+    date_from, date_to: ISO dates, e.g. "2024-07-01".
+    cloud_max: maximum scene cloud cover percentage (0-100).
+    limit: cap on returned scenes.
+
+    Returns a list of {id, date, cloud_cover, satellite, tile}. Requires
+    that the user has signed in with Google in the browser first — call
+    gee_status to check.
+    """
+    from . import gee
+
+    try:
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    return gee.search_sentinel2(
+        bbox=bbox,
+        date_from=date_from,
+        date_to=date_to,
+        cloud_max=cloud_max,
+        limit=limit,
+    )
+
+
+@mcp.tool()
+def gee_extract_glaciers(
+    bbox: list[float],
+    scene_id: str,
+    ndsi_threshold: float = 0.4,
+    min_area_px: int = 50,
+) -> list[list[list[float]]]:
+    """Extract glacier outlines from a Sentinel-2 scene via NDSI.
+
+    bbox: [west, south, east, north] in EPSG:4326.
+    scene_id: a scene id from gee_search_sentinel2.
+    ndsi_threshold: NDSI cutoff (0.4 conservative, 0.5 stricter).
+    min_area_px: drop specks smaller than this many 10 m pixels.
+
+    Returns a list of rings; each ring is a list of [lon, lat] vertices.
+    This tool only *returns* the geometry — call gee_add_glaciers_to_map
+    to actually draw them in the editor.
+    """
+    from . import gee
+
+    try:
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    return gee.extract_glacier_contours(
+        bbox=bbox,
+        scene_id=scene_id,
+        ndsi_threshold=ndsi_threshold,
+        min_area_px=min_area_px,
+    )
+
+
+@mcp.tool()
+def gee_add_glaciers_to_map(
+    bbox: list[float],
+    scene_id: str,
+    ndsi_threshold: float = 0.4,
+    min_area_px: int = 50,
+    name_prefix: str = "gee_glacier",
+) -> dict:
+    """One-shot: detect glaciers and add them to the shared PolygonState.
+
+    Equivalent to gee_extract_glaciers + add_polygon per ring, but done in
+    a single MCP call. After this returns, the new outlines are visible in
+    the map UI and in list_polygons.
+
+    Returns {ok, added, start_index, total}.
+    """
+    from shapely.geometry import Polygon as _ShapelyPolygon
+
+    from . import gee
+
+    try:
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+
+    rings = gee.extract_glacier_contours(
+        bbox=bbox,
+        scene_id=scene_id,
+        ndsi_threshold=ndsi_threshold,
+        min_area_px=min_area_px,
+    )
+    if not rings:
+        return {
+            "ok": True,
+            "added": 0,
+            "start_index": len(_state),
+            "total": len(_state),
+        }
+
+    start_index = len(_state)
+    added = 0
+    for i, ring in enumerate(rings):
+        try:
+            poly = _ShapelyPolygon(ring)
+        except Exception:  # noqa: BLE001 — bad ring, skip
+            continue
+        if not poly.is_valid or poly.area <= 0:
+            continue
+        _state.add_polygon(poly, name=f"{name_prefix}_{i + 1}")
+        added += 1
+
+    return {
+        "ok": True,
+        "added": added,
+        "start_index": start_index,
+        "total": len(_state),
+    }
+
+
+@mcp.tool()
+def gee_list_basemap_presets() -> list[dict]:
+    """List the named Sentinel-2 basemap visualisation presets.
+
+    Returns a list of {name, label, bands|index, min, max, gamma, palette}
+    entries. Use one of the ``name`` values as the ``preset`` argument of
+    ``gee_get_basemap``, or copy the full entry into ``vis_params`` and
+    tweak it. This is the catalogue the UI builds its basemap dropdown
+    from, exposed here so the agent can pick a layer without hard-coding
+    band names.
+    """
+    from . import gee
+
+    return gee.basemap_presets()
+
+
+@mcp.tool()
+def gee_get_basemap(
+    scene_id: str,
+    preset: str = "true_color",
+    vis_params: dict | None = None,
+    bbox: list[float] | None = None,
+    clip: bool = False,
+    push: bool = True,
+) -> dict:
+    """Return an XYZ tile URL for one Sentinel-2 scene (map basemap).
+
+    Use this to draw a real satellite image *under* the glacier polygons
+    instead of an empty background. The returned ``tile_url`` is a plain
+    ``https://earthengine.googleapis.com/.../{z}/{x}/{y}`` template that
+    OpenLayers / Leaflet can use directly — it is what the UI passes to
+    ``ol.source.XYZ``.
+
+    scene_id: a scene id from gee_search_sentinel2 (full id or bare
+              suffix both work — the collection prefix is normalised).
+    preset:   one of gee_list_basemap_presets() — ``true_color``,
+              ``false_color_nir``, ``false_color_swir``, ``ndsi``,
+              ``ndwi``, ``ndvi``, ``nir_gray``. Ignored when vis_params
+              is given.
+    vis_params: raw override — {bands, min, max, gamma, palette, index}.
+              Use this for a custom band combination the presets do not
+              cover (e.g. B5/B4/B3 red-edge false colour).
+    bbox:     optional [west, south, east, north] in EPSG:4326. When
+              given, it is also forwarded to the browser so the map can
+              recenter on the scene.
+    clip:     when True and bbox is given, clip the layer to the bbox.
+    push:     when True (default) the resolved layer is also pushed to
+              every open map tab over the WebSocket, so the image
+              appears without the user clicking anything.
+
+    Returns {map_id, token, tile_url, preset, scene_id, band_names,
+    index, expires_in, pushed_to}. The map id lives ~24 h; call again to
+    refresh.
+    """
+    from . import gee
+
+    try:
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+
+    result = gee.get_basemap(
+        scene_id=scene_id,
+        preset=preset,
+        vis_params=vis_params,
+        bbox=bbox,
+        clip=clip,
+    )
+
+    # Hand the layer to the browser so it actually shows up on the map.
+    # Lazy import: app.py pulls in titiler/rasterio, which we do not want
+    # to import when the MCP server runs in a slim context.
+    result["pushed_to"] = 0
+    if push:
+        try:
+            import asyncio as _asyncio
+
+            from .app import hub
+
+            payload = {
+                "tile_url": result["tile_url"],
+                "scene_id": result["scene_id"],
+                "preset": result["preset"],
+                "bbox": bbox,
+            }
+            # FastMCP runs sync tools in a worker thread, so there is no
+            # running loop here. Schedule the broadcast on the main loop
+            # that owns the WebSocket hub.
+            loop = getattr(hub, "loop", None)
+            if loop is not None and loop.is_running():
+                _asyncio.run_coroutine_threadsafe(hub.push_gee_basemap(payload), loop)
+                result["pushed_to"] = "scheduled"
+        except Exception as exc:  # noqa: BLE001 — push is best-effort
+            result["push_error"] = str(exc)
+
+    return result
+
+
 def run(host: str = "127.0.0.1", port: int = 8766) -> None:
     """Start the streamable-http MCP server on ``host:port``."""
     mcp.settings.host = host

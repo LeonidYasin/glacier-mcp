@@ -41,6 +41,12 @@ function connectWebSocket() {
     const msg = JSON.parse(event.data);
     if (msg.type === "polygons") {
       applyCollectionFromServer(msg);
+    } else if (msg.type === "gee_basemap") {
+      // Server (agent via the gee_get_basemap MCP tool) resolved an XYZ
+      // tile URL for a Sentinel-2 scene and pushed it here. Swap the
+      // layer and, when the server sent a bbox, recenter the view so the
+      // user actually sees the scene instead of an empty ocean.
+      applyGeeBasemapFromServer(msg);
     } else if (msg.type === "capture_map_request") {
       // Server (agent via MCP tool) asks us to screenshot the map.
       // Reply with the same request_id so the server can match it.
@@ -1240,12 +1246,316 @@ function installHud() {
   updateHudView();
 }
 
+// ---- Google Earth Engine auth ---------------------------------------------
+//
+// The sign-in itself happens on google.com: the server builds the consent
+// URL from the app's OAuth client_id, redirects the browser there, and
+// Google redirects back to /api/gee/auth/callback — which sets the
+// "glacier_session" cookie and bounces us home.
+//
+// This module only wires the toolbar buttons and keeps the "gee-status"
+// label in sync by polling /api/gee/auth/status. OAuth tokens never touch
+// the browser — they live in the server's in-memory session store.
+
+async function refreshGeeStatus() {
+  const statusEl = document.getElementById("gee-status");
+  const loginBtn = document.getElementById("btn-gee-login");
+  const logoutBtn = document.getElementById("btn-gee-logout");
+  if (!statusEl || !loginBtn || !logoutBtn) return;
+  try {
+    const r = await fetch("/api/gee/auth/status", { cache: "no-store" });
+    if (!r.ok) return;
+    const s = await r.json();
+    if (s.logged_in) {
+      statusEl.textContent = `GEE: ${s.email || "signed in"}`;
+      statusEl.classList.add("gee-ok");
+      loginBtn.hidden = true;
+      logoutBtn.hidden = false;
+    } else {
+      statusEl.textContent = "GEE: not signed in";
+      statusEl.classList.remove("gee-ok");
+      loginBtn.hidden = false;
+      logoutBtn.hidden = true;
+    }
+  } catch (err) {
+    // Backend not up yet, or user is offline: leave the label as-is.
+    console.warn("gee status check failed", err);
+  }
+}
+
+function initGeeAuth() {
+  const loginBtn = document.getElementById("btn-gee-login");
+  const logoutBtn = document.getElementById("btn-gee-logout");
+  if (loginBtn) {
+    loginBtn.addEventListener("click", () => {
+      // Full-page redirect. The server replies 302 -> accounts.google.com;
+      // after consent, Google -> /api/gee/auth/callback -> "/" (this page),
+      // now with a glacier_session cookie so /status reports logged_in=true.
+      window.location.href = "/api/gee/auth/start";
+    });
+  }
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await fetch("/api/gee/auth/logout", { method: "POST" });
+      } catch (err) {
+        console.warn("gee logout failed", err);
+      }
+      await refreshGeeStatus();
+    });
+  }
+  // Initial check + light polling. 5 s is cheap on localhost and means
+  // the label flips almost immediately after the callback redirect.
+  refreshGeeStatus();
+  setInterval(refreshGeeStatus, 5000);
+}
+
+// ---- Sidebar collapse -----------------------------------------------------
+//
+// The tool panel is a collapsible left sidebar (see index.html). Its state
+// is a single class on <body> — 'sidebar-collapsed' — so both the sidebar
+// and the map position react to it via CSS. We remember the choice so the
+// map stays wide across reloads once the user has hidden the tools.
+
+const SIDEBAR_STATE_KEY = "glacier-mcp:sidebar-collapsed";
+
+function setSidebarCollapsed(collapsed) {
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+  try {
+    localStorage.setItem(SIDEBAR_STATE_KEY, collapsed ? "1" : "0");
+  } catch (_err) {
+    // localStorage can be unavailable (private mode); the toggle still works.
+  }
+  // OpenLayers needs a nudge after the map container changes size.
+  if (map) map.updateSize();
+}
+
+function initSidebar() {
+  const toggle = document.getElementById("sidebar-toggle");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      setSidebarCollapsed(!document.body.classList.contains("sidebar-collapsed"));
+    });
+  }
+  // Keyboard shortcut: B toggles the sidebar (common in GIS editors).
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "b" || ev.key === "B") {
+      if (ev.target && /INPUT|SELECT|TEXTAREA/.test(ev.target.tagName)) return;
+      setSidebarCollapsed(!document.body.classList.contains("sidebar-collapsed"));
+    }
+  });
+  // Restore the previous choice.
+  let collapsed = false;
+  try {
+    collapsed = localStorage.getItem(SIDEBAR_STATE_KEY) === "1";
+  } catch (_err) {
+    collapsed = false;
+  }
+  document.body.classList.toggle("sidebar-collapsed", collapsed);
+}
+
+// ---- GEE basemap ----------------------------------------------------------
+//
+// Puts a *real* Sentinel-2 image under the polygons. The server calls
+// ee.Image.getMapId() and returns an XYZ tile template; we wrap it in an
+// ol.source.XYZ and add it as the lowest layer so polygons stay on top.
+//
+// Two HTTP calls are involved:
+//   GET  /api/gee/basemap/presets  — fill the dropdown (once at boot)
+//   POST /api/gee/basemap          — resolve {tile_url, ...} for a scene
+//
+// Everything the user can tweak lives in the toolbar: the preset (true
+// colour, false colour, NDSI/NDWI/NDVI indices, ...), the opacity, and
+// the scene id. The scene id is auto-filled when a search result is
+// picked, but the user can also paste one by hand.
+
+let geeBasemapLayer = null;
+
+// Server-driven counterpart to applyGeeBasemap(): the agent resolved the
+// XYZ tile URL on the backend (gee_get_basemap MCP tool) and pushed it
+// over the WebSocket. We do not re-request anything — we just wrap the
+// URL in ol.source.XYZ and recenter on the scene bbox if one was sent.
+function applyGeeBasemapFromServer(msg) {
+  if (!msg || !msg.tile_url) return;
+  const statusEl = document.getElementById("status");
+
+  // Replace any previous GEE basemap — one scene at a time.
+  clearGeeBasemap();
+
+  const source = new ol.source.XYZ({
+    url: msg.tile_url,
+    crossOrigin: "anonymous",
+    attributions: "Sentinel-2 · Google Earth Engine",
+  });
+  geeBasemapLayer = new ol.layer.Tile({
+    source,
+    opacity: 1,
+    zIndex: -1,
+  });
+  map.addLayer(geeBasemapLayer);
+
+  // Recenter so the user sees the scene rather than an empty ocean.
+  // bbox is [west, south, east, north] in EPSG:4326.
+  if (Array.isArray(msg.bbox) && msg.bbox.length === 4 && map) {
+    const [west, south, east, north] = msg.bbox;
+    const extent = ol.proj.transformExtent(
+      [west, south, east, north],
+      "EPSG:4326",
+      "EPSG:3857"
+    );
+    map.getView().fit(extent, { padding: [60, 60, 60, 60], duration: 350 });
+  }
+
+  // Reflect the swap in the toolbar controls, if they exist.
+  const sceneInput = document.getElementById("gee-basemap-scene");
+  if (sceneInput && msg.scene_id) sceneInput.value = msg.scene_id;
+  const presetSelect = document.getElementById("gee-basemap-preset");
+  if (presetSelect && msg.preset) presetSelect.value = msg.preset;
+  const clearBtn = document.getElementById("btn-gee-basemap-clear");
+  if (clearBtn) clearBtn.hidden = false;
+
+  if (statusEl) {
+    statusEl.textContent = `basemap: ${msg.preset || "layer"} (${msg.scene_id || ""})`;
+  }
+}
+
+async function loadGeeBasemapPresets() {
+  const select = document.getElementById("gee-basemap-preset");
+  if (!select) return;
+  try {
+    const r = await fetch("/api/gee/basemap/presets", { cache: "no-store" });
+    if (!r.ok) return;
+    const data = await r.json();
+    // Keep the "— none —" option, append the server-provided ones.
+    for (const preset of data.presets || []) {
+      const opt = document.createElement("option");
+      opt.value = preset.name;
+      opt.textContent = preset.label || preset.name;
+      select.appendChild(opt);
+    }
+  } catch (err) {
+    console.warn("basemap presets load failed", err);
+  }
+}
+
+function clearGeeBasemap() {
+  if (geeBasemapLayer) {
+    map.removeLayer(geeBasemapLayer);
+    geeBasemapLayer = null;
+  }
+  const clearBtn = document.getElementById("btn-gee-basemap-clear");
+  if (clearBtn) clearBtn.hidden = true;
+  const applyBtn = document.getElementById("btn-gee-basemap-apply");
+  if (applyBtn) applyBtn.disabled = false;
+}
+
+async function applyGeeBasemap() {
+  const sceneInput = document.getElementById("gee-basemap-scene");
+  const presetSelect = document.getElementById("gee-basemap-preset");
+  const opacityInput = document.getElementById("gee-basemap-opacity");
+  const applyBtn = document.getElementById("btn-gee-basemap-apply");
+  const clearBtn = document.getElementById("btn-gee-basemap-clear");
+  const statusEl = document.getElementById("status");
+
+  const sceneId = (sceneInput?.value || "").trim();
+  const preset = presetSelect?.value || "true_color";
+  const opacity = opacityInput ? parseFloat(opacityInput.value) : 1;
+
+  if (!sceneId) {
+    if (statusEl) statusEl.textContent = "basemap: enter or pick a scene id first";
+    return;
+  }
+  if (!preset) {
+    // "— none —" selected: just clear whatever is on the map.
+    clearGeeBasemap();
+    return;
+  }
+
+  if (applyBtn) applyBtn.disabled = true;
+  if (statusEl) statusEl.textContent = `basemap: loading ${preset}…`;
+
+  try {
+    const r = await fetch("/api/gee/basemap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene_id: sceneId, preset }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.tile_url) {
+      const msg = data.error || `HTTP ${r.status}`;
+      if (statusEl) statusEl.textContent = `basemap error: ${msg}`;
+      console.warn("basemap request failed", data);
+      return;
+    }
+
+    // Replace any previous GEE basemap — one scene at a time keeps the
+    // layer stack simple and matches the single-scene tile URL model.
+    clearGeeBasemap();
+
+    const source = new ol.source.XYZ({
+      url: data.tile_url,
+      crossOrigin: "anonymous",
+      // The Earth Engine tile endpoint is not a standard {z}/{x}/{y}
+      // template on every API version, so let OL pick the default
+      // projection (EPSG:3857, which EE serves) and maxZoom.
+      attributions: "Sentinel-2 · Google Earth Engine",
+    });
+    geeBasemapLayer = new ol.layer.Tile({
+      source,
+      opacity: Number.isFinite(opacity) ? opacity : 1,
+      zIndex: -1, // below polygons and the raster overlay
+    });
+    map.addLayer(geeBasemapLayer);
+
+    if (clearBtn) clearBtn.hidden = false;
+    if (statusEl) {
+      statusEl.textContent = `basemap: ${data.preset || preset} (${data.scene_id || sceneId})`;
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = `basemap error: ${err.message || err}`;
+    console.warn("basemap apply failed", err);
+  } finally {
+    if (applyBtn) applyBtn.disabled = false;
+  }
+}
+
+function initGeeBasemap() {
+  const applyBtn = document.getElementById("btn-gee-basemap-apply");
+  const clearBtn = document.getElementById("btn-gee-basemap-clear");
+  const presetSelect = document.getElementById("gee-basemap-preset");
+  const opacityInput = document.getElementById("gee-basemap-opacity");
+
+  if (applyBtn) applyBtn.addEventListener("click", applyGeeBasemap);
+  if (clearBtn) clearBtn.addEventListener("click", clearGeeBasemap);
+
+  // Live opacity: change the layer's alpha without re-requesting tiles.
+  if (opacityInput) {
+    opacityInput.addEventListener("input", () => {
+      if (!geeBasemapLayer) return;
+      const value = parseFloat(opacityInput.value);
+      geeBasemapLayer.setOpacity(Number.isFinite(value) ? value : 1);
+    });
+  }
+
+  // Switching to a preset re-loads the basemap immediately if one is up.
+  if (presetSelect) {
+    presetSelect.addEventListener("change", () => {
+      if (geeBasemapLayer && presetSelect.value) applyGeeBasemap();
+    });
+  }
+
+  loadGeeBasemapPresets();
+}
+
 // ---- Boot -----------------------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", () => {
+  initSidebar();
   initMap();
   wireButtons();
   installHud();
+  initGeeAuth();
+  initGeeBasemap();
   if (fileInput) {
     fileInput.addEventListener("change", handleFileUpload);
   }
