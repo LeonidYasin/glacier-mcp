@@ -827,6 +827,9 @@ def gee_auth_logout(request: Request) -> JSONResponse:
     sid = _gee_session_id(request)
     if sid:
         _gee_sessions.pop(sid, None)
+    # Mirror the callback: also drop the global active user so MCP tools
+    # immediately stop seeing credentials.
+    gee.set_active_user(None)
     response = JSONResponse({"ok": True})
     response.delete_cookie("glacier_session")
     return response
