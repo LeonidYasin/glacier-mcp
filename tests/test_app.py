@@ -41,7 +41,9 @@ def test_get_polygons_returns_feature_collection() -> None:
 def test_post_appends_new_polygon() -> None:
     new_geom = {
         "type": "Polygon",
-        "coordinates": [[[100.0, 100.0], [110.0, 100.0], [110.0, 110.0], [100.0, 110.0], [100.0, 100.0]]],
+        "coordinates": [
+            [[100.0, 100.0], [110.0, 100.0], [110.0, 110.0], [100.0, 110.0], [100.0, 100.0]]
+        ],
     }
     r = client.post("/api/polygons", json={"geometry": new_geom, "name": "second"})
     assert r.status_code == 200
