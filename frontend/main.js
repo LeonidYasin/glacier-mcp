@@ -117,6 +117,9 @@ function initMap() {
   vectorLayer = new ol.layer.Vector({
     source: vectorSource,
     style: styleForFeature,
+    // Pre-render a margin around the viewport so hit-detection has coloured
+    // pixels ready even for polygons slightly off-screen.
+    renderBuffer: 200,
   });
 
   map = new ol.Map({
