@@ -1240,12 +1240,77 @@ function installHud() {
   updateHudView();
 }
 
+// ---- Google Earth Engine auth ---------------------------------------------
+//
+// The sign-in itself happens on google.com: the server builds the consent
+// URL from the app's OAuth client_id, redirects the browser there, and
+// Google redirects back to /api/gee/auth/callback — which sets the
+// "glacier_session" cookie and bounces us home.
+//
+// This module only wires the toolbar buttons and keeps the "gee-status"
+// label in sync by polling /api/gee/auth/status. OAuth tokens never touch
+// the browser — they live in the server's in-memory session store.
+
+async function refreshGeeStatus() {
+  const statusEl = document.getElementById("gee-status");
+  const loginBtn = document.getElementById("btn-gee-login");
+  const logoutBtn = document.getElementById("btn-gee-logout");
+  if (!statusEl || !loginBtn || !logoutBtn) return;
+  try {
+    const r = await fetch("/api/gee/auth/status", { cache: "no-store" });
+    if (!r.ok) return;
+    const s = await r.json();
+    if (s.logged_in) {
+      statusEl.textContent = `GEE: ${s.email || "signed in"}`;
+      statusEl.classList.add("gee-ok");
+      loginBtn.hidden = true;
+      logoutBtn.hidden = false;
+    } else {
+      statusEl.textContent = "GEE: not signed in";
+      statusEl.classList.remove("gee-ok");
+      loginBtn.hidden = false;
+      logoutBtn.hidden = true;
+    }
+  } catch (err) {
+    // Backend not up yet, or user is offline: leave the label as-is.
+    console.warn("gee status check failed", err);
+  }
+}
+
+function initGeeAuth() {
+  const loginBtn = document.getElementById("btn-gee-login");
+  const logoutBtn = document.getElementById("btn-gee-logout");
+  if (loginBtn) {
+    loginBtn.addEventListener("click", () => {
+      // Full-page redirect. The server replies 302 -> accounts.google.com;
+      // after consent, Google -> /api/gee/auth/callback -> "/" (this page),
+      // now with a glacier_session cookie so /status reports logged_in=true.
+      window.location.href = "/api/gee/auth/start";
+    });
+  }
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      try {
+        await fetch("/api/gee/auth/logout", { method: "POST" });
+      } catch (err) {
+        console.warn("gee logout failed", err);
+      }
+      await refreshGeeStatus();
+    });
+  }
+  // Initial check + light polling. 5 s is cheap on localhost and means
+  // the label flips almost immediately after the callback redirect.
+  refreshGeeStatus();
+  setInterval(refreshGeeStatus, 5000);
+}
+
 // ---- Boot -----------------------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", () => {
   initMap();
   wireButtons();
   installHud();
+  initGeeAuth();
   if (fileInput) {
     fileInput.addEventListener("change", handleFileUpload);
   }
