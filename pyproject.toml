@@ -20,7 +20,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: GIS",
 ]
 dependencies = [
-    "mcp>=1.0.0",
+    # Pin mcp below 2.0: in mcp 2.x FastMCP was renamed to MCPServer and
+    # the module moved (mcp.server.fastmcp -> mcp.server.mcpserver). Our
+    # server.py uses the v1 API, so anything >=2.0 breaks imports.
+    "mcp>=1.0.0,<2.0.0",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "websockets>=12",
