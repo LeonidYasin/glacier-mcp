@@ -1304,6 +1304,151 @@ function initGeeAuth() {
   setInterval(refreshGeeStatus, 5000);
 }
 
+// ---- GEE basemap ----------------------------------------------------------
+//
+// Puts a *real* Sentinel-2 image under the polygons. The server calls
+// ee.Image.getMapId() and returns an XYZ tile template; we wrap it in an
+// ol.source.XYZ and add it as the lowest layer so polygons stay on top.
+//
+// Two HTTP calls are involved:
+//   GET  /api/gee/basemap/presets  — fill the dropdown (once at boot)
+//   POST /api/gee/basemap          — resolve {tile_url, ...} for a scene
+//
+// Everything the user can tweak lives in the toolbar: the preset (true
+// colour, false colour, NDSI/NDWI/NDVI indices, ...), the opacity, and
+// the scene id. The scene id is auto-filled when a search result is
+// picked, but the user can also paste one by hand.
+
+let geeBasemapLayer = null;
+
+async function loadGeeBasemapPresets() {
+  const select = document.getElementById("gee-basemap-preset");
+  if (!select) return;
+  try {
+    const r = await fetch("/api/gee/basemap/presets", { cache: "no-store" });
+    if (!r.ok) return;
+    const data = await r.json();
+    // Keep the "— none —" option, append the server-provided ones.
+    for (const preset of data.presets || []) {
+      const opt = document.createElement("option");
+      opt.value = preset.name;
+      opt.textContent = preset.label || preset.name;
+      select.appendChild(opt);
+    }
+  } catch (err) {
+    console.warn("basemap presets load failed", err);
+  }
+}
+
+function clearGeeBasemap() {
+  if (geeBasemapLayer) {
+    map.removeLayer(geeBasemapLayer);
+    geeBasemapLayer = null;
+  }
+  const clearBtn = document.getElementById("btn-gee-basemap-clear");
+  if (clearBtn) clearBtn.hidden = true;
+  const applyBtn = document.getElementById("btn-gee-basemap-apply");
+  if (applyBtn) applyBtn.disabled = false;
+}
+
+async function applyGeeBasemap() {
+  const sceneInput = document.getElementById("gee-basemap-scene");
+  const presetSelect = document.getElementById("gee-basemap-preset");
+  const opacityInput = document.getElementById("gee-basemap-opacity");
+  const applyBtn = document.getElementById("btn-gee-basemap-apply");
+  const clearBtn = document.getElementById("btn-gee-basemap-clear");
+  const statusEl = document.getElementById("status");
+
+  const sceneId = (sceneInput?.value || "").trim();
+  const preset = presetSelect?.value || "true_color";
+  const opacity = opacityInput ? parseFloat(opacityInput.value) : 1;
+
+  if (!sceneId) {
+    if (statusEl) statusEl.textContent = "basemap: enter or pick a scene id first";
+    return;
+  }
+  if (!preset) {
+    // "— none —" selected: just clear whatever is on the map.
+    clearGeeBasemap();
+    return;
+  }
+
+  if (applyBtn) applyBtn.disabled = true;
+  if (statusEl) statusEl.textContent = `basemap: loading ${preset}…`;
+
+  try {
+    const r = await fetch("/api/gee/basemap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene_id: sceneId, preset }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.tile_url) {
+      const msg = data.error || `HTTP ${r.status}`;
+      if (statusEl) statusEl.textContent = `basemap error: ${msg}`;
+      console.warn("basemap request failed", data);
+      return;
+    }
+
+    // Replace any previous GEE basemap — one scene at a time keeps the
+    // layer stack simple and matches the single-scene tile URL model.
+    clearGeeBasemap();
+
+    const source = new ol.source.XYZ({
+      url: data.tile_url,
+      crossOrigin: "anonymous",
+      // The Earth Engine tile endpoint is not a standard {z}/{x}/{y}
+      // template on every API version, so let OL pick the default
+      // projection (EPSG:3857, which EE serves) and maxZoom.
+      attributions: "Sentinel-2 · Google Earth Engine",
+    });
+    geeBasemapLayer = new ol.layer.Tile({
+      source,
+      opacity: Number.isFinite(opacity) ? opacity : 1,
+      zIndex: -1, // below polygons and the raster overlay
+    });
+    map.addLayer(geeBasemapLayer);
+
+    if (clearBtn) clearBtn.hidden = false;
+    if (statusEl) {
+      statusEl.textContent = `basemap: ${data.preset || preset} (${data.scene_id || sceneId})`;
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = `basemap error: ${err.message || err}`;
+    console.warn("basemap apply failed", err);
+  } finally {
+    if (applyBtn) applyBtn.disabled = false;
+  }
+}
+
+function initGeeBasemap() {
+  const applyBtn = document.getElementById("btn-gee-basemap-apply");
+  const clearBtn = document.getElementById("btn-gee-basemap-clear");
+  const presetSelect = document.getElementById("gee-basemap-preset");
+  const opacityInput = document.getElementById("gee-basemap-opacity");
+
+  if (applyBtn) applyBtn.addEventListener("click", applyGeeBasemap);
+  if (clearBtn) clearBtn.addEventListener("click", clearGeeBasemap);
+
+  // Live opacity: change the layer's alpha without re-requesting tiles.
+  if (opacityInput) {
+    opacityInput.addEventListener("input", () => {
+      if (!geeBasemapLayer) return;
+      const value = parseFloat(opacityInput.value);
+      geeBasemapLayer.setOpacity(Number.isFinite(value) ? value : 1);
+    });
+  }
+
+  // Switching to a preset re-loads the basemap immediately if one is up.
+  if (presetSelect) {
+    presetSelect.addEventListener("change", () => {
+      if (geeBasemapLayer && presetSelect.value) applyGeeBasemap();
+    });
+  }
+
+  loadGeeBasemapPresets();
+}
+
 // ---- Boot -----------------------------------------------------------------
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -1311,6 +1456,7 @@ window.addEventListener("DOMContentLoaded", () => {
   wireButtons();
   installHud();
   initGeeAuth();
+  initGeeBasemap();
   if (fileInput) {
     fileInput.addEventListener("change", handleFileUpload);
   }
