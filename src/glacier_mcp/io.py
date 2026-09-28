@@ -231,10 +231,11 @@ def render_tile_png(
         col_f1, row_f1 = inv * (tile_right, tile_bottom)
 
         # Integer pixel window (row grows down, matching rasterio).
-        col_off = int(round(min(col_f0, col_f1)))
-        row_off = int(round(min(row_f0, row_f1)))
-        col_end = int(round(max(col_f0, col_f1)))
-        row_end = int(round(max(row_f0, row_f1)))
+        # ``round()`` already returns ``int``, so no extra ``int()`` cast.
+        col_off = round(min(col_f0, col_f1))
+        row_off = round(min(row_f0, row_f1))
+        col_end = round(max(col_f0, col_f1))
+        row_end = round(max(row_f0, row_f1))
         win_w = max(1, col_end - col_off)
         win_h = max(1, row_end - row_off)
 
