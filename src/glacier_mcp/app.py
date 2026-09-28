@@ -56,6 +56,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import gee
 from . import io as gio
+from .layers import LayerError, layer_store
 from .server import get_state
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
