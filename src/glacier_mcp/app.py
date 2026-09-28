@@ -343,6 +343,9 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
         _geotiffs[entry_id] = _GeoTIFFEntry(raster=raster, preview_png=preview, meta=meta)
         # Remember the CRS for later shapefile export.
         _current_crs = raster.crs
+        # Remember which id is "current" so /api/state can restore the
+        # basemap after a page reload without re-uploading the file.
+        _current_geotiff_id = entry_id
     finally:
         try:
             Path(tmp.name).unlink(missing_ok=True)
