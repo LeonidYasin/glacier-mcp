@@ -446,6 +446,43 @@ body {
   display: none;
 }
 
+#debug-hud #hud-toggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  font-size: 10px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#debug-hud #hud-toggle:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Collapsed state: hide everything except the Zoom row, shrink the block. */
+#debug-hud.hud-collapsed .hud-row,
+#debug-hud.hud-collapsed hr {
+  display: none;
+}
+
+#debug-hud.hud-collapsed .hud-row:first-of-type {
+  display: flex;
+}
+
+#debug-hud.hud-collapsed {
+  min-width: 0;
+  max-width: none;
+  padding-right: 26px;
+}
+
 #debug-hud .hud-row {
   display: flex;
   gap: 8px;
