@@ -37,9 +37,9 @@ from dotenv import load_dotenv
 load_dotenv(".env.local")
 load_dotenv()
 
-from . import __version__
-from .app import run as run_ui
-from .server import run as run_mcp
+from . import __version__  # noqa: E402 — must follow load_dotenv(), see above
+from .app import run as run_ui  # noqa: E402 — must follow load_dotenv(), see above
+from .server import run as run_mcp  # noqa: E402 — must follow load_dotenv(), see above
 
 
 def main() -> None:
