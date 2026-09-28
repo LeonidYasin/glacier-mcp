@@ -21,6 +21,23 @@
 
     <div id="map"></div>
 
+    <!-- Debug HUD: shows zoom, resolution, mouse position in the raster CRS,
+         and the loaded raster's identity/metadata. Toggle with "D". -->
+    <div id="debug-hud" title="Press D to hide/show">
+      <div class="hud-row"><b>Zoom</b><span id="hud-zoom">—</span></div>
+      <div class="hud-row"><b>Resolution</b><span id="hud-resolution">—</span></div>
+      <div class="hud-row"><b>Center</b><span id="hud-center">—</span></div>
+      <div class="hud-row"><b>Mouse</b><span id="hud-mouse">—</span></div>
+      <hr />
+      <div class="hud-row"><b>Raster id</b><span id="hud-id">—</span></div>
+      <div class="hud-row"><b>Filename</b><span id="hud-filename">—</span></div>
+      <div class="hud-row"><b>Size</b><span id="hud-size">—</span></div>
+      <div class="hud-row"><b>Bands</b><span id="hud-bands">—</span></div>
+      <div class="hud-row"><b>CRS</b><span id="hud-crs">—</span></div>
+      <div class="hud-row"><b>Extent</b><span id="hud-extent">—</span></div>
+      <div class="hud-row"><b>Tile URL</b><span id="hud-tile-url">—</span></div>
+    </div>
+
     <div id="polygon-panel">
       <span id="panel-label">Glaciers:</span>
       <div id="polygon-chips"></div>
