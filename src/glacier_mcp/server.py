@@ -201,8 +201,8 @@ def smooth_polygon(tolerance: float = 0.0, polygon_index: int = 0) -> dict:
 
 
 @mcp.tool()
-async def capture_map(full_viewport: bool = False, thumb_width: int = 512) -> list:
-    """Capture the current map view as a PNG and return a thumbnail.
+async def capture_map(full_viewport: bool = False) -> dict:
+    """Capture the current map view as a full-resolution PNG on disk.
 
     Requires a browser tab open at http://127.0.0.1:8765/ with the map UI
     loaded — the tool sends a WebSocket request to that tab, the browser
@@ -212,15 +212,15 @@ async def capture_map(full_viewport: bool = False, thumb_width: int = 512) -> li
     Arguments:
       full_viewport — if False, capture only #map (the map itself);
                       if True, capture the whole page (toolbar, HUD, panel).
-      thumb_width   — width of the returned preview image, in pixels.
 
-    Returns a list of MCP content blocks:
-      * a text block with JSON metadata: {path, width, height,
-        thumb_width, thumb_height, size_bytes};
-      * an image block with the downscaled preview (image/png).
+    Returns a dict: {path, width, height, size_bytes}.
 
+    The image itself is NOT returned through MCP: the transport has a
+    ~64 KB response limit, and even a 512x288 PNG preview exceeds it. To
+    actually see the picture, call ``get_capture_thumbnail(path)`` — it
+    downscales on the server and returns a small JPEG that always fits.
     The full-resolution PNG is written to the ``captures/`` directory next
-    to the frontend; the path in the text block points at it.
+    to the frontend.
     """
     # Lazy import: app.py pulls in titiler/rasterio, which we do not want
     # to import when the MCP server is started in a slim context.
@@ -228,7 +228,7 @@ async def capture_map(full_viewport: bool = False, thumb_width: int = 512) -> li
 
     try:
         payload = await hub.request_capture(
-            {"fullViewport": full_viewport, "thumbWidth": thumb_width},
+            {"fullViewport": full_viewport},
             timeout=15.0,
         )
     except RuntimeError as exc:
@@ -243,21 +243,65 @@ async def capture_map(full_viewport: bool = False, thumb_width: int = 512) -> li
         raise ValueError(f"capture failed in browser: {payload.get('error')}")
 
     full_path = save_capture(payload["full_base64"])
-    meta = {
+    return {
         "path": str(full_path),
         "width": payload["width"],
         "height": payload["height"],
-        "thumb_width": payload["thumb_width"],
-        "thumb_height": payload["thumb_height"],
         "size_bytes": full_path.stat().st_size,
     }
+
+
+@mcp.tool()
+def get_capture_thumbnail(path: str, max_width: int = 256) -> list:
+    """Return a small JPEG preview of a capture written by capture_map.
+
+    The MCP transport refuses any response larger than ~64 KB, so the map
+    PNG cannot be returned as-is. This tool downscales the saved PNG on
+    the server (Pillow) and encodes it as JPEG quality=70, which lands
+    around 5-15 KB for a typical map view — comfortably inside the limit.
+
+    Arguments:
+      path      — the ``path`` field returned by ``capture_map``.
+      max_width — target width in pixels. 128/192/256 are safe; 512 may
+                  exceed the 64 KB limit on detailed rasters.
+
+    Returns the usual MCP content list: a small text block with the actual
+    dimensions and encoded size, plus an image block (image/jpeg).
+    """
+    import base64 as _b64
+    import io as _io
+    from pathlib import Path as _Path
+
+    from PIL import Image
+
+    p = _Path(path)
+    if not p.exists():
+        raise ValueError(f"capture not found: {path}")
+
+    img = Image.open(p)
+    ratio = img.height / img.width if img.width else 1.0
+    new_h = max(1, int(max_width * ratio))
+    img = img.resize((max_width, new_h), Image.LANCZOS)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    buf = _io.BytesIO()
+    img.save(buf, format="JPEG", quality=70, optimize=True)
+    b64 = _b64.b64encode(buf.getvalue()).decode("ascii")
+
     return [
-        {"type": "text", "text": json.dumps(meta)},
         {
-            "type": "image",
-            "data": payload["thumb_base64"],
-            "mimeType": "image/png",
+            "type": "text",
+            "text": json.dumps(
+                {
+                    "source_path": str(p),
+                    "preview_width": max_width,
+                    "preview_height": new_h,
+                    "jpeg_base64_bytes": len(b64),
+                }
+            ),
         },
+        {"type": "image", "data": b64, "mimeType": "image/jpeg"},
     ]
 
 
