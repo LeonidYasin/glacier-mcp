@@ -880,6 +880,77 @@ def gee_auth_logout(request: Request) -> JSONResponse:
     return response
 
 
+# ---- GEE basemap ---------------------------------------------------------
+#
+# The endpoints below put a *real* Sentinel-2 image under the polygons.
+# The heavy lifting lives in gee.get_basemap(), which calls
+# ee.Image.getMapId() and returns an XYZ tile template that the browser
+# can feed straight into ol.source.XYZ. No Earth Engine JS API and no
+# OAuth in the browser — the tile URL is a plain public HTTPS endpoint
+# with a short-lived map id baked in.
+
+
+class GeeBasemapRequest(BaseModel):
+    """Body for ``POST /api/gee/basemap``.
+
+    ``vis_params`` is the escape hatch for custom band combinations: when
+    present it fully replaces ``preset``, which is what the UI sends after
+    the user edits the bands by hand.
+    """
+
+    scene_id: str
+    preset: str = "true_color"
+    vis_params: dict[str, Any] | None = None
+    bbox: list[float] | None = None
+    clip: bool = False
+
+
+@app.get("/api/gee/basemap/presets")
+def gee_basemap_presets_endpoint() -> JSONResponse:
+    """Catalogue of named basemap presets for the UI dropdown."""
+    try:
+        return JSONResponse({"presets": gee.basemap_presets()})
+    except Exception as exc:  # noqa: BLE001 — surface any import error to the UI
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
+@app.post("/api/gee/basemap")
+def gee_basemap_endpoint(body: GeeBasemapRequest) -> JSONResponse:
+    """Return an XYZ tile URL for one Sentinel-2 scene.
+
+    The response is what the frontend needs to build an
+    ``ol.layer.Tile({source: new ol.source.XYZ({url: tile_url})})``::
+
+        {
+          "tile_url": "https://earthengine.googleapis.com/v1/.../{z}/{x}/{y}",
+          "map_id":   "projects/.../maps/...",
+          "token":    null,
+          "preset":   "true_color",
+          "scene_id": "20240928T080721_..._T37TGJ",
+          "band_names": ["B4", "B3", "B2"],
+          "index":    null,
+          "expires_in": 86400
+        }
+    """
+    try:
+        gee._require_ee()
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=401)
+    try:
+        result = gee.get_basemap(
+            scene_id=body.scene_id,
+            preset=body.preset,
+            vis_params=body.vis_params,
+            bbox=body.bbox,
+            clip=body.clip,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception as exc:  # noqa: BLE001 — Earth Engine errors go back verbatim
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    return JSONResponse(result)
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await hub.connect(ws)
