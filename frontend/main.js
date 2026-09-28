@@ -1532,9 +1532,11 @@ function setLayerOpacity(id, opacity) {
   const record = layerRegistry.get(id);
   if (!record) return false;
   const v = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
+  // Optimistic local apply (slider drag must feel instant), then persist.
   record.opacity = v;
   record.layer.setOpacity(v);
   renderLayerPanel();
+  mutateLayerOnServer("PATCH", `/api/layers/${encodeURIComponent(id)}`, { opacity: v });
   return true;
 }
 
@@ -1544,6 +1546,9 @@ function setLayerVisible(id, visible) {
   record.visible = !!visible;
   record.layer.setVisible(record.visible);
   renderLayerPanel();
+  mutateLayerOnServer("PATCH", `/api/layers/${encodeURIComponent(id)}`, {
+    visible: record.visible,
+  });
   return true;
 }
 
