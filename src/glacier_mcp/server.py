@@ -12,6 +12,9 @@ Three new tools manage the collection itself: ``add_polygon``,
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
