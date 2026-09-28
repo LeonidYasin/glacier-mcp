@@ -48,11 +48,19 @@ REDIRECT_URI = os.environ.get(
     "http://127.0.0.1:8765/api/gee/auth/callback",
 )
 
-#: Earth Engine scope. ``earthengine`` is the legacy scope, still required
-#: by ``ee.Initialize`` for the Python API to talk to the backend.
+#: OAuth scopes we request from Google. The Earth Engine scope is the
+#: one we actually care about; `openid` + `userinfo.email` let us read
+#: the signed-in user's email; `userinfo.profile` is included even though
+#: we do not use the profile data, because Google's oauth2/v2/userinfo
+#: endpoint silently expands a `userinfo.email` request to include
+#: `userinfo.profile`. If we do not request it explicitly,
+#: google-auth-oauthlib raises 'Scope has changed from ... to ...' on
+#: fetch_token, which would abort the login. Requesting it up-front
+#: makes the granted scope match the requested scope exactly.
 SCOPES = [
     "https://www.googleapis.com/auth/earthengine",
     "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
     "openid",
 ]
 
