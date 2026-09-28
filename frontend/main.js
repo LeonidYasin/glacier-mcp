@@ -260,13 +260,34 @@ function initMap() {
     evt.preventDefault();
   });
 
-  fetch(`${BACKEND}/api/polygons`)
+  // Initial state: one call gets BOTH the current GeoTIFF (if any) and the
+  // polygons. If a raster is loaded, we must restore its CRS and layer
+  // BEFORE the polygons are read, otherwise their coordinates would be
+  // interpreted as Web Mercator and land near the pole after a reload.
+  fetch(`${BACKEND}/api/state`)
     .then((r) => r.json())
-    .then((body) => applyCollectionFromServer({ type: "polygons", ...body }))
-    .catch(() => {});
+    .then((state) => {
+      if (state.geotiff) {
+        try {
+          applyGeoTiffToMap(state.geotiff);
+          setStatus(`raster restored: ${state.geotiff.filename}`);
+        } catch (err) {
+          console.error("failed to restore raster:", err);
+          setStatus(`raster restore failed: ${err.message || err}`);
+        }
+      } else {
+        setStatus("ready — no raster loaded");
+      }
+      // applyGeoTiffToMap already cleared vectorSource if the CRS changed,
+      // so the polygons from the server are now drawn in the right CRS.
+      applyCollectionFromServer({ type: "polygons", polygons: state.polygons });
+    })
+    .catch((err) => {
+      console.error("boot: /api/state failed:", err);
+      setStatus("failed to load initial state");
+    });
 
   connectWebSocket();
-  setStatus("ready — no raster loaded");
 }
 
 // ---- Server round trips ---------------------------------------------------
