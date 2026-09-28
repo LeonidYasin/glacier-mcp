@@ -774,6 +774,10 @@ function applyGeoTiffToMap(meta) {
     constrainResolution: false,
   });
 
+  // Populate the debug HUD with this raster's identity and metadata. The
+  // view-related rows (zoom / resolution / center / mouse) update on their
+  // own via the subscriptions installed in installHud().
+  updateHudRaster(meta);
 }
 
 // ---- Buttons --------------------------------------------------------------
