@@ -57,6 +57,36 @@ app = FastAPI(title="glacier-mcp")
 # and overlays become additional layers pointing at their own url=.
 
 _cog_tiler = _CogTilerFactory()
+
+# titiler raises TileOutsideBounds *inside* the tile endpoint when OpenLayers
+# requests a tile that does not intersect the raster — which is routine,
+# because OL always covers the whole viewport, not just the raster. The
+# exception is swallowed by titiler's own error handling and turned into
+# HTTP 500 before it reaches FastAPI's exception handlers, so we must
+# intercept it at the source: patch rio-tiler's Reader.tile to return a
+# fully transparent image for out-of-bounds tiles instead of raising.
+# This is what every standard XYZ tile server does.
+from rio_tiler.errors import TileOutsideBounds as _TileOutsideBounds
+from rio_tiler.io.rasterio import Reader as _RioReader
+from rio_tiler.models import ImageData as _ImageData
+import numpy as _np
+
+_original_tile = _RioReader.tile
+
+
+def _safe_tile(self, *args, **kwargs):
+    try:
+        return _original_tile(self, *args, **kwargs)
+    except _TileOutsideBounds:
+        # A fully-transparent tile: one band of zeros + an all-zero mask.
+        size = int(kwargs.get("tile_size", 256) or 256)
+        blank = _np.zeros((1, size, size), dtype=_np.uint8)
+        blank_mask = _np.zeros((size, size), dtype=_np.uint8)
+        return _ImageData(blank, blank_mask, assets=["outside"])
+
+
+_RioReader.tile = _safe_tile
+
 app.include_router(_cog_tiler.router, prefix="/cog", tags=["cog"])
 
 # ---- in-memory GeoTIFF store ----------------------------------------------
