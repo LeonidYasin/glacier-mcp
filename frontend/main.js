@@ -930,10 +930,28 @@ function updateHudRaster(meta) {
     `/api/geotiff/${meta.id}/tile/{z}/{x}/{y}.png`;
 }
 
+let _hudBoundView = null;
+
+function rebindHudView() {
+  if (!map || !hudEls.zoom) return;
+  const view = map.getView();
+  if (_hudBoundView === view) {
+    updateHudView();
+    return;
+  }
+  if (_hudBoundView) {
+    _hudBoundView.un("change:resolution", updateHudView);
+    _hudBoundView.un("change:center", updateHudView);
+  }
+  view.on("change:resolution", updateHudView);
+  view.on("change:center", updateHudView);
+  _hudBoundView = view;
+  updateHudView();
+}
+
 function installHud() {
   if (!map || !hudEls.zoom) return;
-  map.getView().on("change:resolution", updateHudView);
-  map.getView().on("change:center", updateHudView);
+  rebindHudView();
   map.on("pointermove", updateHudMouse);
   const toggleBtn = document.getElementById("hud-toggle");
   if (toggleBtn && hudRoot) {
