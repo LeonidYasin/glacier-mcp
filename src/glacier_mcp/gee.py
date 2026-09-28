@@ -274,6 +274,28 @@ def _require_ee() -> None:
 S2_COLLECTION = "COPERNICUS/S2_SR_HARMONIZED"
 
 
+def _resolve_scene_id(scene_id: str) -> str:
+    """Normalise a Sentinel-2 scene id to a bare asset id.
+
+    ``search_sentinel2`` returns fully-qualified ids of the form
+    ``COPERNICUS/S2_SR_HARMONIZED/<timestamp>_<timestamp>_<tile>`` (that is
+    how Earth Engine reports ``system:index``-prefixed ids through the
+    ``toList().getInfo()`` path). Every other function in this module
+    builds the asset path as ``S2_COLLECTION + '/' + scene_id``, so passing
+    the fully-qualified id straight back in used to produce
+    ``COPERNICUS/S2_SR_HARMONIZED/COPERNICUS/S2_SR_HARMONIZED/<...>`` and
+    fail with ``Image.load: Image asset ... not found``.
+
+    Strip the collection prefix if present so both call styles work:
+    callers may pass either the full id from a search result, or just the
+    bare suffix.
+    """
+    prefix = S2_COLLECTION + "/"
+    if scene_id.startswith(prefix):
+        return scene_id[len(prefix):]
+    return scene_id
+
+
 def _bbox_to_ee_geometry(bbox: list[float]) -> Any:
     """Convert ``[west, south, east, north]`` (EPSG:4326) to an ee.Geometry."""
     import ee
