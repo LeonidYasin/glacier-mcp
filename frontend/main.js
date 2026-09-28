@@ -77,16 +77,26 @@ function setInfo(text) {
 }
 
 // ---- Feature styling ------------------------------------------------------
+//
+// Selected polygon: thick white halo + bright fill, so it is unmistakable.
+// Unselected: thin coloured outline + a *translucent* fill so the whole area
+// is clickable (a fully transparent fill means clicks only land on the line,
+// which made selection feel broken).
 
 function styleForFeature(feature) {
   const idx = feature.get("index");
-  const isSelected = idx === selectedIndex;
+  const isSelected = idx !== null && idx === selectedIndex;
   const color = COLORS[(idx ?? 0) % COLORS.length];
+
+  if (isSelected) {
+    return new ol.style.Style({
+      stroke: new ol.style.Stroke({ color: "#ffffff", width: 4 }),
+      fill: new ol.style.Fill({ color: "rgba(255,255,255,0.35)" }),
+    });
+  }
   return new ol.style.Style({
-    stroke: new ol.style.Stroke({ color, width: isSelected ? 3 : 2 }),
-    fill: new ol.style.Fill({
-      color: isSelected ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0)",
-    }),
+    stroke: new ol.style.Stroke({ color, width: 2 }),
+    fill: new ol.style.Fill({ color: "rgba(255,255,255,0.08)" }),
   });
 }
 
