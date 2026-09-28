@@ -44,6 +44,17 @@ body {
   background: #2c5282;
 }
 
+/* Active toggle (Draw mode on) — bright yellow to stand out. */
+#toolbar .btn.btn-active {
+  background: #b7791f;
+  color: #fff;
+  box-shadow: 0 0 0 2px #f6e05e inset;
+}
+
+#toolbar .btn.btn-active:hover {
+  background: #975a16;
+}
+
 /* Secondary button (Undo / Redo): outlined, muted. */
 #toolbar .btn.btn-secondary {
   background: transparent;
