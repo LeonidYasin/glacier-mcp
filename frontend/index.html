@@ -24,10 +24,38 @@
     <div id="polygon-panel">
       <span id="panel-label">Glaciers:</span>
       <div id="polygon-chips"></div>
+      <button type="button" id="btn-show-all" class="btn btn-secondary" title="Open list of all polygons">
+        Show all
+      </button>
       <button type="button" id="btn-delete-selected" class="btn btn-danger" title="Delete the selected polygon (Del)" disabled>
         Delete selected
       </button>
     </div>
+
+    <dialog id="polygon-modal">
+      <header>
+        <h2>Polygons (<span id="modal-count">0</span>)</h2>
+        <input type="search" id="modal-search" placeholder="Search by name..." autocomplete="off" />
+        <button type="button" id="modal-close" aria-label="Close">×</button>
+      </header>
+      <div id="modal-table-wrap">
+        <table id="modal-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Name</th>
+              <th>Vertices</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="modal-tbody"></tbody>
+        </table>
+        <p id="modal-empty" hidden>No polygons. Draw one in the map.</p>
+      </div>
+      <footer>
+        <span id="modal-hint">Click a row to select the polygon on the map.</span>
+      </footer>
+    </dialog>
 
     <script src="https://cdn.jsdelivr.net/npm/ol@10.0.0/dist/ol.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
