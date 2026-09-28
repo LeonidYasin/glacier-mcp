@@ -40,7 +40,7 @@ body {
   white-space: nowrap;
 }
 
-#toolbar .btn:hover {
+.btn:hover, #toolbar .btn:hover {
   background: #2c5282;
 }
 
