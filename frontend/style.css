@@ -536,19 +536,35 @@ body {
 .ol-scale-line {
   background: rgba(0, 0, 0, 0.65);
   /*
-   * Centre the scale bar horizontally over the map, just above the
-   * polygon panel. `left: 50%` + `translateX(-50%)` centres it without
-   * knowing its own width; the 56px bottom offset clears the 44px-tall
-   * `#polygon-panel` (see `#map { inset: 40px 0 44px 0; }`) plus a
-   * 12px margin. No drag behaviour on purpose — after a page reload the
-   * bar always snaps back to this fixed bottom-centre position.
+   * Default position: centred horizontally, sitting flush on top of the
+   * 44px-tall `#polygon-panel` (see `#map { inset: 40px 0 44px 0; }`).
+   * `left: 50%` + `translateX(-50%)` centres it without knowing its own
+   * width. 46px = 44px panel + 2px gap, so the bar hugs the status bar
+   * rather than floating above it.
+   *
+   * The bar is draggable (see `makeScaleLineDraggable` in main.js): the
+   * user can pick it up and slide it next to a feature to read off a
+   * linear size. The inline `left`/`bottom` styles that the drag handler
+   * writes override these defaults; reloading the page drops the inline
+   * styles and the bar snaps back to this bottom-centre default.
    */
-  bottom: 56px;
+  bottom: 46px;
   left: 50%;
   transform: translateX(-50%);
   padding: 2px 8px;
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+/* While the user is actively dragging the scale bar, drop the centring
+ * transform so the element follows the cursor 1:1, and raise it above
+ * the map so it is never clipped by neighbouring controls. */
+.ol-scale-line.ol-scale-line-dragging {
+  transform: none;
+  z-index: 1000;
 }
 
 .ol-scale-line-inner {
