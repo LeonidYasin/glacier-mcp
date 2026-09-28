@@ -1566,6 +1566,9 @@ function reorderLayer(id, toIndex) {
   for (const [key, rec] of rebuilt) layerRegistry.set(key, rec);
   reflowLayerZ();
   renderLayerPanel();
+  mutateLayerOnServer("PATCH", `/api/layers/${encodeURIComponent(id)}`, {
+    to_index: clamped,
+  });
   return true;
 }
 
