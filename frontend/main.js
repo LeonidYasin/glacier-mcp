@@ -550,6 +550,13 @@ function applyGeoTiffToMap(meta) {
     axisOrientation: "enu",
   });
 
+  // Decide whether the polygon geometry needs to be cleared. If the new
+  // raster has the SAME CRS as the previous one (the common case: user
+  // re-uploads the same scene), the existing polygons are still valid and
+  // should be kept. Only when the CRS actually changes do we clear them,
+  // because their coordinates would be meaningless in the new projection.
+  const crsChanged = crsCode !== currentCrsCode;
+
   if (rasterLayer) map.removeLayer(rasterLayer);
   rasterLayer = new ol.layer.Image({
     source: new ol.source.ImageStatic({
@@ -561,8 +568,10 @@ function applyGeoTiffToMap(meta) {
   map.getLayers().insertAt(0, rasterLayer);
 
   currentCrsCode = crsCode;
-  vectorSource.clear();
-  selectedIndex = null;
+  if (crsChanged) {
+    vectorSource.clear();
+    selectedIndex = null;
+  }
 
   const width = Math.abs(extent[2] - extent[0]);
   const height = Math.abs(extent[3] - extent[1]);
