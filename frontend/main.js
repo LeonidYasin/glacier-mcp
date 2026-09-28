@@ -575,11 +575,18 @@ function wireButtons() {
   const undoBtn = document.getElementById("btn-undo");
   const redoBtn = document.getElementById("btn-redo");
   const exportBtn = document.getElementById("btn-export");
+  const deleteBtn = document.getElementById("btn-delete-selected");
   // "Draw new polygon" toggles draw mode on/off. Clicking again cancels.
   if (drawBtn) drawBtn.addEventListener("click", () => setDrawMode(!drawMode));
   if (undoBtn) undoBtn.addEventListener("click", sendUndo);
   if (redoBtn) redoBtn.addEventListener("click", sendRedo);
   if (exportBtn) exportBtn.addEventListener("click", exportShapefile);
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", () => {
+      if (typeof selectedIndex !== "number") return;
+      sendDeletePolygon(selectedIndex);
+    });
+  }
 }
 
 // ---- Boot -----------------------------------------------------------------
