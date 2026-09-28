@@ -788,10 +788,17 @@ function applyGeoTiffToMap(meta) {
     // tile across the whole screen. That is what produced the visible
     // "tiles mosaic" — the same tile painted many times.
     maxResolution: resolutions[0],
-    // Keep the raster's full detail available: allow zooming to the native
-    // pixel resolution and beyond, but never let the view drift so far out
-    // that the raster becomes a dot.
-    minResolution: Math.max(width / 100000, 1e-9),
+    // Keep the raster's full detail available: allow zooming FAR past the
+    // raster's native pixel resolution. We deliberately do NOT put an
+    // artificial floor here — the user can decide how deep to go (past the
+    // native resolution the pixels just become bigger squares, and the
+    // `image-rendering: pixelated` CSS keeps them crisp instead of blurry).
+    //
+    // The only real limit is `resolutions[0] / 1e6` — three orders of
+    // magnitude below the coarsest tile resolution. Previously we used
+    // `width / 100000`, which for a Sentinel-2 scene (~54 km wide) worked
+    // out to ~0.55 m/px and effectively hard-stopped the wheel around 8x.
+    minResolution: resolutions[0] / 1e6,
   });
   map.setView(view);
   // Re-subscribe the HUD to the NEW view. `installHud()` subscribed to the
@@ -896,6 +903,7 @@ let _lastResolutions = null;
 const hudEls = {
   zoom: document.getElementById("hud-zoom"),
   resolution: document.getElementById("hud-resolution"),
+  scale: document.getElementById("hud-scale"),
   center: document.getElementById("hud-center"),
   resLimits: document.getElementById("hud-res-limits"),
   resArray: document.getElementById("hud-res-array"),
@@ -924,6 +932,20 @@ function updateHudView() {
   hudEls.resolution.textContent =
     res === undefined ? "—" : res.toExponential(3);
   hudEls.center.textContent = `[${hudFmt(c[0])}, ${hudFmt(c[1])}]`;
+  // Scale denominator in GIS notation. A CSS pixel is 1/96 inch, i.e.
+  // 0.0254/96 metres on a 96-dpi reference display. resolution is metres
+  // per screen pixel, so the classical "scale denominator" (the N in
+  // 1:N, i.e. how many metres on the ground equals 1 metre on the map)
+  // is resolution / (0.0254/96) = resolution * 96 / 0.0254. We show it as
+  // "1 cm = X m", which is the more intuitive form: how many metres does
+  // one centimetre on the screen represent.
+  if (hudEls.scale && res !== undefined && res > 0) {
+    const scaleDenom = (res * 96) / 0.0254; // 1 : scaleDenom
+    const metresPerCm = scaleDenom / 100;   // 1 cm = metresPerCm m
+    hudEls.scale.textContent = `1 cm = ${metresPerCm.toFixed(1)} m`;
+  } else if (hudEls.scale) {
+    hudEls.scale.textContent = "—";
+  }
   if (hudEls.resLimits) {
     const maxR = view.getMaxResolution();
     const minR = view.getMinResolution();
