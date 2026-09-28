@@ -189,6 +189,15 @@ function initMap() {
     ]),
   });
 
+  // ---- Draggable scale line -------------------------------------------
+  // OL's ScaleLine control is anchored to a fixed corner via CSS. We let
+  // the user pick it up and drop it anywhere over the map, so it can be
+  // laid next to a feature to read off a linear size — the same gesture
+  // QGIS / ArcGIS users expect. Position is NOT persisted: a page reload
+  // always snaps the bar back to its CSS default (bottom-centre, flush
+  // with the polygon panel).
+  makeScaleLineDraggable();
+
   // Two interactions, but only one active at a time — like QGIS. Starting in
   // SELECT mode means a plain click never accidentally starts a new polygon
   // (which was the root cause of "click draws instead of selects").
