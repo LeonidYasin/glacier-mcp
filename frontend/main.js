@@ -387,9 +387,63 @@ function applyCollectionFromServer(msg) {
     });
     const count = fc.features.length;
     setStatus(`${count} glacier${count === 1 ? "" : "s"}`);
+    // Rebuild the bottom chip panel and refresh the Delete button state.
+    renderPolygonChips(fc);
   } finally {
     suppressServerSync = false;
   }
+}
+
+// ---- Bottom polygon panel -------------------------------------------------
+//
+// Renders one chip per polygon. Chip click selects the polygon (same effect
+// as clicking it on the map). Selected chip is highlighted; the Delete
+// button enables only when something is selected. The chip row scrolls
+// horizontally when there are more glaciers than fit on screen.
+
+function renderPolygonChips(fc) {
+  const host = document.getElementById("polygon-chips");
+  if (!host) return;
+  host.innerHTML = "";
+  if (!fc || fc.type !== "FeatureCollection") {
+    updateDeleteButton();
+    return;
+  }
+  fc.features.forEach((feature) => {
+    const idx = feature.properties.index;
+    const name = feature.properties.name || `glacier_${idx + 1}`;
+    const color = COLORS[idx % COLORS.length];
+
+    const chip = document.createElement("div");
+    chip.className = "chip" + (idx === selectedIndex ? " chip-selected" : "");
+    chip.dataset.index = String(idx);
+    chip.title = `${name} — click to select, Delete to remove`;
+
+    const swatch = document.createElement("span");
+    swatch.className = "chip-swatch";
+    swatch.style.background = color;
+    chip.appendChild(swatch);
+
+    const label = document.createElement("span");
+    label.textContent = `${idx + 1}. ${name}`;
+    chip.appendChild(label);
+
+    chip.addEventListener("click", () => {
+      selectedIndex = idx;
+      vectorLayer.changed();
+      renderPolygonChips(fc);
+      setStatus(`selected: ${name} — Delete to remove, drag vertices to edit`);
+    });
+
+    host.appendChild(chip);
+  });
+  updateDeleteButton();
+}
+
+function updateDeleteButton() {
+  const btn = document.getElementById("btn-delete-selected");
+  if (!btn) return;
+  btn.disabled = typeof selectedIndex !== "number";
 }
 
 // ---- GeoTIFF upload -------------------------------------------------------
