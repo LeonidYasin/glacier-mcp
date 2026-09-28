@@ -90,11 +90,20 @@ def _client_config() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def build_auth_url(state: str | None = None) -> str:
-    """Build the Google consent URL the browser should be sent to.
+def start_auth_flow(state: str) -> tuple[str, Any]:
+    """Build the Google consent URL and return the live ``Flow`` object.
 
-    ``state`` is an opaque anti-CSRF token; the caller generates one, stores
-    it in the session, and verifies it on the callback.
+    IMPORTANT — PKCE: google-auth-oauthlib's ``Flow`` uses PKCE. When you
+    call ``flow.authorization_url()``, the flow generates a random
+    ``code_verifier`` and puts the corresponding ``code_challenge`` in the
+    URL sent to Google. On the callback, ``flow.fetch_token(code=...)``
+    must be called on **the same Flow instance** so that it can send that
+    ``code_verifier`` back to Google's token endpoint. Creating a fresh
+    Flow in the callback loses the verifier and Google replies
+    ``(invalid_grant) Missing code verifier``.
+
+    The caller is expected to keep the returned Flow alive across the
+    whole OAuth round-trip (see app._gee_states).
     """
     from google_auth_oauthlib.flow import Flow
 
@@ -109,7 +118,7 @@ def build_auth_url(state: str | None = None) -> str:
         prompt="consent",            # force refresh token on every login
         state=state,
     )
-    return url
+    return url, flow
 
 
 @dataclass
