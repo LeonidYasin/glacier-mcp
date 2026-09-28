@@ -740,6 +740,15 @@ function applyGeoTiffToMap(meta) {
     padding: [20, 20, 20, 20],
     constrainResolution: false,
   });
+  // view.fit computes the resolution that makes the raster fit the
+  // viewport. For a viewport smaller than TILE_SIZE (256 px) that
+  // resolution is COARSER than resolutions[0], and OpenLayers then picks
+  // tile level 1 (or deeper) even though we intend z=0 to be the single
+  // overview tile. Clamping here guarantees the view never zooms out past
+  // the z=0 tile, so the number of requested tiles matches the pyramid.
+  if (view.getResolution() > resolutions[0]) {
+    view.setResolution(resolutions[0]);
+  }
 }
 
 // ---- Buttons --------------------------------------------------------------
