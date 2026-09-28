@@ -212,13 +212,19 @@ def render_tile_png(
         # rasterio's row direction and OpenLayers' tile origin for rasters
         # whose Y axis points up (the tile grid stores origin as top-left
         # and works in raster pixel space).
-        col_off = int(round(x * span_px))
-        row_off = int(round(y * span_px))
-        win_w = max(1, int(round(span_px)))
+        col_off = round(x * span_px)
+        row_off = round(y * span_px)
+        win_w = max(1, round(span_px))
         win_h = win_w
 
         # Fully outside the raster → transparent tile.
-        if col_off >= raster_w or row_off >= raster_h or col_off + win_w <= 0 or row_off + win_h <= 0:
+        outside = (
+            col_off >= raster_w
+            or row_off >= raster_h
+            or col_off + win_w <= 0
+            or row_off + win_h <= 0
+        )
+        if outside:
             return _transparent_png(tile_size)
 
         # Clamp the window to the raster. After clamping we track how much
