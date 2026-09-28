@@ -62,6 +62,11 @@ class _GeoTIFFEntry:
     raster: gio.Raster
     preview_png: bytes
     meta: dict
+    # Absolute path to the source GeoTIFF on disk. titiler reads tiles
+    # directly from this file (by path or file:// URL), so we must keep it
+    # around for the lifetime of the entry. The tempdir is cleaned up by
+    # the OS at reboot, not by us.
+    path: Path
 
 
 _geotiffs: dict[str, _GeoTIFFEntry] = {}
