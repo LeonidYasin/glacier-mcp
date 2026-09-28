@@ -228,7 +228,7 @@ class _Hub:
         for ws in clients:
             try:
                 await ws.send_text(json.dumps(payload))
-            except Exception:
+            except Exception:  # noqa: BLE001 — dead socket, prune below
                 dead.append(ws)
         if dead:
             async with self._lock:
