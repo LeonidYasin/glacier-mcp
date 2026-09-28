@@ -809,8 +809,7 @@ def gee_auth_callback(
         raise HTTPException(status_code=400, detail=f"Google returned error: {error}")
     if not code:
         raise HTTPException(status_code=400, detail="Missing 'code' from Google.")
-    expected = request.cookies.get("glacier_oauth_state")
-    if not expected or expected != state:
+    if not _consume_state(state):
         raise HTTPException(
             status_code=400,
             detail="OAuth 'state' mismatch — the sign-in link expired. Try again.",
@@ -838,7 +837,6 @@ def gee_auth_callback(
         samesite="lax",
         max_age=86400,  # 24 hours
     )
-    response.delete_cookie("glacier_oauth_state")
     return response
 
 
