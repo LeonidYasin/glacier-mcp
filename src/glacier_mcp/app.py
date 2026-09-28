@@ -371,7 +371,9 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
         "data_min": data_min,
         "data_max": data_max,
     }
-    _geotiffs[entry_id] = _GeoTIFFEntry(raster=raster, preview_png=preview, meta=meta)
+    _geotiffs[entry_id] = _GeoTIFFEntry(
+        raster=raster, preview_png=preview, meta=meta, path=raster_path
+    )
     # Remember the CRS for later shapefile export.
     _current_crs = raster.crs
     # Remember which id is "current" so /api/state can restore the
