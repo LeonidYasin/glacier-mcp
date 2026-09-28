@@ -32,7 +32,7 @@ os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 #   1. .env.local — the gitignored, user-provided OAuth secrets.
 #   2. .env       — optional, for CI / production overrides.
 # Later files win, so .env can override .env.local if both exist.
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: E402 — grouped with the env setup above
 
 load_dotenv(".env.local")
 load_dotenv()
