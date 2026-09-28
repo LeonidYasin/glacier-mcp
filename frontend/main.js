@@ -696,44 +696,47 @@ function applyGeoTiffToMap(meta) {
   const width = Math.abs(extent[2] - extent[0]);
   const height = Math.abs(extent[3] - extent[1]);
 
-  // ---- Raster basemap via titiler (COG tile server) ---------------------
+  // ---- Raster basemap: our own rasterio-backed tile server --------------
   //
-  // Instead of a single preview.png we now ask titiler for tiles. titiler
-  // picks the right overview level per zoom, reprojects to the tile grid
-  // CRS, and returns a 256x256 PNG per request. This scales to Sentinel-2
-  // scenes and mosaics: the browser only fetches the tiles it shows.
+  // We used to route this through titiler, but rio-tiler 9.x loses the
+  // GeoTIFF's CRS through its own Reader (image.crs = None), which makes
+  // titiler crash in CRS_to_uri with a 500 on every tile. Our own endpoint
+  // `/api/geotiff/{id}/tile/{z}/{x}/{y}.png` uses rasterio.open() directly
+  // (which sees the CRS correctly) and cuts tiles in the raster's OWN CRS.
   //
-  // We use the standard WebMercatorQuad tile grid. The map itself stays in
-  // the raster's CRS (so the polygons keep their native coordinates);
-  // OpenLayers reprojects the 3857 tiles on the fly.
-  const TILE_CRS = "EPSG:3857";
-  // Standard OL tile grid for 3857 with a 256-px tile size.
-  const tileGrid3857 = ol.tilegrid.createXYZ({
-    projection: TILE_CRS,
-    maxZoom: 22,
-    tileSize: 256,
+  // Because the tiles are in the raster CRS — not Web Mercator — we build
+  // the OL tile grid in that same CRS. `z=0` is one tile for the whole
+  // raster; `z=N` is 2**N by 2**N tiles. The origin is the raster's
+  // top-left corner, matching rasterio's row direction (rows grow down).
+  const TILE_SIZE = 256;
+  const MAX_Z = 20;
+  const maxSpan = Math.max(width, height) || 1;
+  const resolutions = [];
+  for (let z = 0; z <= MAX_Z; z++) {
+    resolutions.push(maxSpan / (Math.pow(2, z) * TILE_SIZE));
+  }
+  const rasterTileGrid = new ol.tilegrid.TileGrid({
+    origin: [extent[0], extent[3]],
+    resolutions,
+    tileSize: TILE_SIZE,
   });
 
   if (rasterLayer) map.removeLayer(rasterLayer);
   rasterLayer = new ol.layer.Tile({
     source: new ol.source.TileImage({
-      projection: TILE_CRS,
-      tileGrid: tileGrid3857,
+      projection,
+      tileGrid: rasterTileGrid,
       crossOrigin: "anonymous",
       tileUrlFunction: (tileCoord) => {
-        // TileCoord is [z, x, y] with OL's y already flipped to top-down
-        // inside the tile grid. We can pass it straight to titiler's XYZ
-        // endpoint — no manual y flip needed here.
-        const [z, x, y] = tileCoord;
-        // Route tiles to our own rasterio-backed endpoint instead of
-        // titiler. rio-tiler 9.x loses the GeoTIFF's CRS through its own
-        // Reader (image.crs = None), which crashes titiler in CRS_to_uri
-        // and produces a 500 for every tile. Our endpoint uses
-        // rasterio.open() directly, which sees the CRS correctly, and
-        // serves tiles in the raster's OWN CRS (matching the grid below).
+        const [z, x, tileYOL] = tileCoord;
+        // The OL tile grid grows Y upwards from its origin; our backend
+        // (and rasterio) use top-down row indices, so flip within this
+        // zoom level to keep the two grids aligned.
+        const grid = Math.pow(2, z);
+        const tileYRaster = grid - 1 - tileYOL;
         return (
           `${BACKEND}/api/geotiff/${meta.id}/tile/` +
-          `${z}/${x}/${y}.png`
+          `${z}/${x}/${tileYRaster}.png`
         );
       },
     }),
