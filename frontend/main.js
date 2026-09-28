@@ -1650,7 +1650,10 @@ function renderLayerPanel() {
     close.className = "layer-btn layer-remove";
     close.textContent = "✕";
     close.title = "Remove layer";
-    close.addEventListener("click", () => removeLayer(id));
+    close.addEventListener("click", () => {
+      removeLayer(id);
+      mutateLayerOnServer("DELETE", `/api/layers/${encodeURIComponent(id)}`);
+    });
 
     row.append(vis, name, opacity, up, down, close);
     list.appendChild(row);
