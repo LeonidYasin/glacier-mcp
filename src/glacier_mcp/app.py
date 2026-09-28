@@ -28,6 +28,11 @@ import numpy as np
 # non-square rasters, arbitrary CRS, mosaics, and multi-layer overlays —
 # all the pieces we tried to build by hand.
 from titiler.core.factory import TilerFactory as _CogTilerFactory
+# rio-tiler is titiler's raster engine. We patch its Reader.tile below so
+# that out-of-bounds tiles return a transparent image instead of a 500.
+from rio_tiler.errors import TileOutsideBounds as _TileOutsideBounds
+from rio_tiler.io.rasterio import Reader as _RioReader
+from rio_tiler.models import ImageData as _ImageData
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
