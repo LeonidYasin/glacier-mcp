@@ -176,11 +176,19 @@ def _render_preview_png(raster: gio.Raster, max_size: int = 4096) -> bytes:
 
 
 class _Hub:
-    """Tracks connected WebSocket clients and broadcasts state updates."""
+    """Tracks connected WebSocket clients and broadcasts state updates.
+
+    Also carries a request/response channel used by the ``capture_map``
+    MCP tool: the agent asks the browser to screenshot the map, the
+    browser replies over the same WebSocket, and the tool waits on a
+    Future keyed by a short request id.
+    """
 
     def __init__(self) -> None:
         self._clients: set[WebSocket] = set()
         self._lock = asyncio.Lock()
+        # request_id -> Future[dict] set by resolve_capture()
+        self._pending: dict[str, asyncio.Future] = {}
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -204,6 +212,45 @@ class _Hub:
             async with self._lock:
                 for ws in dead:
                     self._clients.discard(ws)
+
+    async def request_capture(self, options: dict, timeout: float = 10.0) -> dict:
+        """Ask one connected browser to screenshot the map.
+
+        Returns the parsed ``capture_map_response`` payload. Raises
+        ``RuntimeError`` if no browser is connected, or ``asyncio.TimeoutError``
+        if the browser does not reply within ``timeout`` seconds.
+        """
+        async with self._lock:
+            clients = list(self._clients)
+        if not clients:
+            raise RuntimeError(
+                "No browser is connected to /ws. Open http://127.0.0.1:8765/ "
+                "in a tab and try again."
+            )
+        ws = clients[0]
+        request_id = uuid.uuid4().hex
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        self._pending[request_id] = fut
+        try:
+            await ws.send_text(
+                json.dumps(
+                    {
+                        "type": "capture_map_request",
+                        "request_id": request_id,
+                        "options": options,
+                    }
+                )
+            )
+            return await asyncio.wait_for(fut, timeout=timeout)
+        finally:
+            self._pending.pop(request_id, None)
+
+    def resolve_capture(self, request_id: str, payload: dict) -> None:
+        """Match an incoming capture_map_response to its pending Future."""
+        fut = self._pending.get(request_id)
+        if fut is not None and not fut.done():
+            fut.set_result(payload)
 
 
 hub = _Hub()
