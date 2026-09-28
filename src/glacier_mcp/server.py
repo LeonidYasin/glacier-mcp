@@ -20,17 +20,31 @@ from .state import PolygonState
 # Single shared instance for the process.
 _state = PolygonState()
 
-# The MCP Python SDK turns on DNS-rebinding protection by default: any
-# request whose `Origin` header is not in `allowed_origins` is rejected
-# with 403. Browsers always send an `Origin`, and a Chrome extension
-# sends `chrome-extension://<id>` — which is NOT in the SDK's default
-# localhost-only list. That is why the DeepSeek++ plugin (a Chrome
-# extension acting as an MCP client over Streamable HTTP) hit 403 while
-# our Flask-based mcp-server (no Origin check at all) worked fine.
+# The MCP Python SDK turns DNS-rebinding protection on by default and checks
+# BOTH the `Host` header and the `Origin` header of every request. Either
+# one being outside the corresponding allow-list produces a 4xx (403 for a
+# bad Origin, 421 Misdirected Request for a bad Host).
 #
-# We keep the protection ON but explicitly allow-list the *specific*
-# extension ID instead of `chrome-extension://*`: a wildcard would let
-# any Chrome extension the user happens to install reach this server.
+# Defaults only cover a localhost host WITHOUT our custom ports, and only
+# localhost origins. That breaks two real clients of this server:
+#   * the MCP Streamable HTTP client at http://127.0.0.1:8766/mcp sends
+#     `Host: 127.0.0.1:8766`, which the default `allowed_hosts` rejects;
+#   * the DeepSeek++ Chrome extension sends
+#     `Origin: chrome-extension://<id>`, which the default `allowed_origins`
+#     rejects.
+# We keep the protection enabled and just widen both allow-lists to cover
+# exactly what we need.
+#
+# We deliberately allow-list the SPECIFIC extension ID rather than
+# `chrome-extension://*`: a wildcard would let any Chrome extension the user
+# happens to install reach this server.
+_MCP_ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "127.0.0.1:*",
+    "localhost",
+    "localhost:*",
+]
+
 _MCP_ALLOWED_ORIGINS = [
     "http://127.0.0.1:*",
     "http://localhost:*",
@@ -45,6 +59,7 @@ mcp = FastMCP(
     stateless_http=True,
     json_response=True,
     transport_security=TransportSecuritySettings(
+        allowed_hosts=_MCP_ALLOWED_HOSTS,
         allowed_origins=_MCP_ALLOWED_ORIGINS,
     ),
 )
