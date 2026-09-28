@@ -768,8 +768,14 @@ function applyGeoTiffToMap(meta) {
       // OL expects a CanvasImageSource (HTMLImageElement, ImageBitmap,
       // HTMLCanvasElement, OffscreenCanvas). Returning an HTMLImageElement
       // is the simplest path — the browser fetches the URL and fires load.
+      //
+      // Do NOT set crossOrigin here: our /viewport endpoint is same-origin
+      // (served by the same FastAPI process), so CORS is not needed. Setting
+      // crossOrigin: "anonymous" on the same-origin image makes OL 10.0
+      // throw "Cannot read properties of undefined (reading 'call')" in
+      // ImageCanvas.js — apparently an internal race between the image
+      // load event and the canvas source registration.
       const img = new Image();
-      img.crossOrigin = "anonymous";
       img.src = url;
       return img;
     },
