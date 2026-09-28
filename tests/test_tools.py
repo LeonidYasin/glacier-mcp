@@ -63,9 +63,11 @@ def test_add_vertex_inserts_before_index() -> None:
 
 
 def test_delete_vertex_refuses_when_only_three_left() -> None:
+    from glacier_mcp.geometry import GeometryError
+
     _reset_state()
     tools.delete_vertex(0)  # now 3 vertices
-    with pytest.raises(Exception):
+    with pytest.raises(GeometryError):
         tools.delete_vertex(0)
 
 
