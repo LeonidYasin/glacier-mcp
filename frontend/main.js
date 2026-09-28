@@ -1610,15 +1610,21 @@ async function loadGeeBasemapPresets() {
 }
 
 function clearGeeBasemap() {
-  if (geeBasemapLayer) {
-    map.removeLayer(geeBasemapLayer);
-    geeBasemapLayer = null;
+  // Drop only GEE layers; GeoTIFF and external XYZ layers stay.
+  for (const [id, rec] of Array.from(layerRegistry.entries())) {
+    if (rec.kind === "gee") removeLayer(id, { silent: true });
   }
+  reflowLayerZ();
+  renderLayerPanel();
   const clearBtn = document.getElementById("btn-gee-basemap-clear");
   if (clearBtn) clearBtn.hidden = true;
   const applyBtn = document.getElementById("btn-gee-basemap-apply");
   if (applyBtn) applyBtn.disabled = false;
 }
+
+//: id of the most recently added GEE layer — the toolbar opacity slider
+//: and preset dropdown act on it.
+let activeGeeLayerId = null;
 
 async function applyGeeBasemap() {
   const sceneInput = document.getElementById("gee-basemap-scene");
