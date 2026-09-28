@@ -965,7 +965,7 @@ def gee_basemap_endpoint(body: GeeBasemapRequest) -> JSONResponse:
         }
     """
     try:
-        gee._require_ee()
+        gee._require_ee()  # noqa: SLF001 — package-internal guard, see gee.py
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=401)
     try:
