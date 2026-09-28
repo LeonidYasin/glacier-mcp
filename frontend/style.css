@@ -11,7 +11,6 @@ body {
   left: 0;
   right: 0;
   height: 40px;
-  line-height: 40px;
   padding: 0 12px;
   background: #1e1e1e;
   color: #ddd;
@@ -21,9 +20,13 @@ body {
   gap: 12px;
   z-index: 10;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 #toolbar .btn {
+  /* Do not grow, do not shrink: fixed-size control. */
+  flex: 0 0 auto;
   display: inline-block;
   height: 28px;
   line-height: 28px;
@@ -34,6 +37,7 @@ body {
   cursor: pointer;
   font-size: 13px;
   user-select: none;
+  white-space: nowrap;
 }
 
 #toolbar .btn:hover {
@@ -45,15 +49,25 @@ body {
   display: none;
 }
 
+/* Info text: allow shrink, then truncate with an ellipsis. min-width: 0 is
+   the critical bit — without it flexbox uses the content width as the
+   minimum and nothing actually shrinks. */
 #geotiff-info {
+  flex: 1 1 auto;
+  min-width: 0;
   color: #aaa;
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #status {
-  margin-left: auto;
+  /* Also fixed-size: short label, keep it visible at the right edge. */
+  flex: 0 0 auto;
   color: #888;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 #map {
