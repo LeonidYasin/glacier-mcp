@@ -262,6 +262,19 @@ def render_tile_png(
         window = Window(src_col, src_row, read_w, read_h)
         data = src.read(window=window)  # shape (bands, read_h, read_w)
 
+        # Where this read window sits inside the *ideal* tile square.
+        # ``win_w`` / ``win_h`` are the size of a full tile in source
+        # pixels (before clamping to the raster). ``src_col - col_off`` is
+        # how many pixels were clipped on the left, and so on. The window
+        # may be clipped differently on X and Y for a non-square raster —
+        # we must paste it at the right offset within a transparent canvas
+        # WITHOUT stretching it to 256x256, otherwise the tile distorts
+        # and neighbours do not line up.
+        paste_x_frac = (src_col - col_off) / win_w if win_w > 0 else 0.0
+        paste_y_frac = (src_row - row_off) / win_h if win_h > 0 else 0.0
+        content_w_frac = (src_col_end - src_col) / win_w if win_w > 0 else 1.0
+        content_h_frac = (src_row_end - src_row) / win_h if win_h > 0 else 1.0
+
     # --- Normalize each band to 0..255 and build an RGBA image -------------
     # We keep the original (min-max) stretch to match the preview look.
     def _stretch(band):
