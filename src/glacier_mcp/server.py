@@ -13,11 +13,44 @@ Three new tools manage the collection itself: ``add_polygon``,
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from .state import PolygonState
 
 # Single shared instance for the process.
 _state = PolygonState()
+
+# The MCP Python SDK turns DNS-rebinding protection on by default and checks
+# BOTH the `Host` header and the `Origin` header of every request. Either
+# one being outside the corresponding allow-list produces a 4xx (403 for a
+# bad Origin, 421 Misdirected Request for a bad Host).
+#
+# Defaults only cover a localhost host WITHOUT our custom ports, and only
+# localhost origins. That breaks two real clients of this server:
+#   * the MCP Streamable HTTP client at http://127.0.0.1:8766/mcp sends
+#     `Host: 127.0.0.1:8766`, which the default `allowed_hosts` rejects;
+#   * the DeepSeek++ Chrome extension sends
+#     `Origin: chrome-extension://<id>`, which the default `allowed_origins`
+#     rejects.
+# We keep the protection enabled and just widen both allow-lists to cover
+# exactly what we need.
+#
+# We deliberately allow-list the SPECIFIC extension ID rather than
+# `chrome-extension://*`: a wildcard would let any Chrome extension the user
+# happens to install reach this server.
+_MCP_ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "127.0.0.1:*",
+    "localhost",
+    "localhost:*",
+]
+
+_MCP_ALLOWED_ORIGINS = [
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    # DeepSeek++ Chrome extension (MCP Streamable HTTP client).
+    "chrome-extension://kdmpkkahkhdmdhfkdihkopikgcocbpb",
+]
 
 # ``stateless_http=True`` lets clients connect/reconnect without sticky
 # sessions, which is what the OpenLayers UI + agent pair expects.
@@ -25,6 +58,21 @@ mcp = FastMCP(
     "glacier-mcp",
     stateless_http=True,
     json_response=True,
+    transport_security=TransportSecuritySettings(
+        # NOTE: DNS-rebinding protection is DISABLED because the MCP SDK's
+        # origin matching does NOT accept `chrome-extension://<id>` origins
+        # (Chrome extensions have no host component, so the RFC-3986 origin
+        # parser rejects them). Enabling the protection blocks the DeepSeek++
+        # plugin with HTTP 403 `Invalid Origin header`, even with the
+        # extension ID explicitly listed in `allowed_origins`.
+        #
+        # The server binds to 127.0.0.1 only, so remote DNS-rebinding is not
+        # a threat in practice — a browser on another host cannot reach this
+        # port, and a same-host browser cannot be used for DNS rebinding.
+        enable_dns_rebinding_protection=False,
+        allowed_hosts=_MCP_ALLOWED_HOSTS,
+        allowed_origins=_MCP_ALLOWED_ORIGINS,
+    ),
 )
 
 
