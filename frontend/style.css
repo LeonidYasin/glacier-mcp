@@ -151,6 +151,73 @@ body.sidebar-collapsed #sidebar {
   cursor: pointer;
 }
 
+/* Layers panel ---------------------------------------------------------- */
+
+#layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.layer-empty {
+  font-size: 12px;
+  color: #718096;
+  font-style: italic;
+}
+
+.layer-row {
+  display: grid;
+  grid-template-columns: 16px 1fr 56px auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: #2d3748;
+  border: 1px solid #4a5568;
+  border-radius: 4px;
+}
+
+.layer-row input[type="checkbox"] {
+  margin: 0;
+  accent-color: #2f855a;
+  cursor: pointer;
+}
+
+.layer-name {
+  font-size: 12px;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.layer-row input[type="range"] {
+  width: 56px;
+  margin: 0;
+}
+
+.layer-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 18px;
+  text-align: center;
+  background: transparent;
+  border: 1px solid #4a5568;
+  border-radius: 3px;
+  color: #cbd5e0;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.layer-btn:hover {
+  background: #374151;
+}
+
+.layer-remove:hover {
+  background: #742a2a;
+  border-color: #9b2c2c;
+}
+
 .btn, #toolbar .btn {
   /* Do not grow, do not shrink: fixed-size control. */
   flex: 0 0 auto;
