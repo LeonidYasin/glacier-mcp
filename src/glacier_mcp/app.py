@@ -13,6 +13,7 @@ endpoint that writes every digitised polygon as one row in the .dbf.
 from __future__ import annotations
 
 import asyncio
+import base64
 import io as stdlib_io
 import json
 import shutil
