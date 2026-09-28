@@ -54,11 +54,36 @@ _MCP_ALLOWED_ORIGINS = [
 
 # ``stateless_http=True`` lets clients connect/reconnect without sticky
 # sessions, which is what the OpenLayers UI + agent pair expects.
+# TEMPORARY DEBUG: DNS-rebinding protection is DISABLED so we can confirm
+# whether the plugin can connect to this server at all. If the plugin works
+# with protection off but not with it on, the allow-lists below are the
+# issue; if it fails even with protection off, the problem is elsewhere
+# (plugin config, port collision, firewall, etc.).
+#
+# TODO: re-enable before merging — `enable_dns_rebinding_protection=True`
+# with an explicit allow-list of hosts and origins (see PR description).
+_MCP_ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "127.0.0.1:*",
+    "localhost",
+    "localhost:*",
+]
+
+_MCP_ALLOWED_ORIGINS = [
+    "http://127.0.0.1:*",
+    "http://localhost:*",
+    # DeepSeek++ Chrome extension (MCP Streamable HTTP client).
+    "chrome-extension://kdmpkkahkhdmdhfkdihkopikgcocbpb",
+]
+
+# ``stateless_http=True`` lets clients connect/reconnect without sticky
+# sessions, which is what the OpenLayers UI + agent pair expects.
 mcp = FastMCP(
     "glacier-mcp",
     stateless_http=True,
     json_response=True,
     transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
         allowed_hosts=_MCP_ALLOWED_HOSTS,
         allowed_origins=_MCP_ALLOWED_ORIGINS,
     ),
