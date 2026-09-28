@@ -862,7 +862,7 @@ def gee_auth_callback(
         )
     try:
         user = gee.finish_auth_flow(flow, code)
-    except Exception as exc:  # noqa: BLE001 — surface any exchange failure
+    except Exception as exc:
         raise HTTPException(
             status_code=400, detail=f"Token exchange failed: {exc}"
         ) from exc
