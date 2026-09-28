@@ -395,7 +395,6 @@ def extract_glacier_contours(
 
     ice = mask.And(not_water).selfMask()
 
-    min_area_m2 = min_area_px * 10 * 10  # Sentinel-2 SR is 10 m/pixel
     vectors = ice.reduceToVectors(
         geometry=region,
         scale=10,
