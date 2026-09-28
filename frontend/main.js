@@ -903,6 +903,7 @@ let _lastResolutions = null;
 const hudEls = {
   zoom: document.getElementById("hud-zoom"),
   resolution: document.getElementById("hud-resolution"),
+  scale: document.getElementById("hud-scale"),
   center: document.getElementById("hud-center"),
   resLimits: document.getElementById("hud-res-limits"),
   resArray: document.getElementById("hud-res-array"),
