@@ -520,3 +520,35 @@ body {
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   margin: 6px 0;
 }
+
+/* ---- OpenLayers scale line -------------------------------------------- */
+/*
+ * Built-in OL control. It draws a horizontal bar whose pixel length and
+ * label are recomputed from the current view resolution on every zoom, so
+ * it always shows how many metres on the ground correspond to that many
+ * pixels on screen. This is independent of the physical screen DPI, which
+ * the "1 cm = X m" text in the HUD cannot account for.
+ *
+ * The default OL style is a light grey box on a white background — it is
+ * unreadable on top of a Sentinel-2 scene. We restyle it as white text on
+ * a translucent dark pill so it stays legible over any raster.
+ */
+.ol-scale-line {
+  background: rgba(0, 0, 0, 0.65);
+  bottom: 12px;
+  left: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.ol-scale-line-inner {
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  border-color: #fff;
+  border-top-width: 2px;
+  border-bottom-width: 1px;
+  margin-top: 1px;
+  margin-bottom: 1px;
+}
