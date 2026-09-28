@@ -731,59 +731,40 @@ function applyGeoTiffToMap(meta) {
   for (let z = 0; z <= MAX_Z; z++) {
     resolutions.push(maxSpan / (Math.pow(2, z) * TILE_SIZE));
   }
-  // ---- Raster layer: ol.source.ImageCanvas (WMS-style viewport) --------
+  // ---- Raster layer: ol.source.ImageStatic ------------------------------
   //
-  // We deliberately do NOT use ol.source.TileImage / tileGrid here. Tiles
-  // are the right tool for planetary-scale rasters where you need to stream
-  // megabytes of data progressively. For a single Sentinel-2 scene
-  // (thousands of pixels per side) they are overkill and they introduce
-  // visible artefacts: the OL tile grid forces the image to be cut into
-  // 256x256 tiles, and every tile boundary shows up as a seam because each
-  // tile is resampled independently on the server.
+  // This is the simplest possible raster layer: the backend renders the
+  // whole source GeoTIFF once into a single PNG (cached on upload), and
+  // OpenLayers just displays it at the raster's CRS bounds. No tiles, no
+  // 256x256 grid, no per-viewport re-requests, no ImageCanvas. This is the
+  // approach that worked before we tried to move to tiles.
   //
-  // Instead we use ol.source.ImageCanvas, which calls our `imageFunction`
-  // on every pan/zoom. The function receives the current viewport extent
-  // (in the raster's own CRS) and the size of the map in screen pixels,
-  // and returns a URL to a single PNG that covers exactly that bbox. The
-  // backend `/viewport` endpoint cuts the raster to that bbox and returns
-  // one image — no tiles, no grid, no seams.
+  // Trade-offs (accepted for a single-scene viewer):
+  //   * The full raster is uploaded once, as one PNG. For a Sentinel-2
+  //     scene the preview is a few megabytes — acceptable for a local
+  //     single-user tool.
+  //   * On zoom-in, the browser upscales that same PNG. We opt into
+  //     `image-rendering: pixelated` in style.css so the upscaled pixels
+  //     stay sharp (each source pixel becomes a solid NxN square) — this
+  //     matches what QGIS / ArcGIS show past the native resolution.
+  //   * Panning does not re-fetch anything — the whole PNG is in memory.
+  //
+  // The backend caches the preview PNG at upload time, so this request is
+  // cheap and only fires once per uploaded raster.
   if (rasterLayer) map.removeLayer(rasterLayer);
-  const rasterImageSource = new ol.source.ImageCanvas({
+  const previewUrl = `${BACKEND}/api/geotiff/${meta.id}/preview.png`;
+  const rasterImageSource = new ol.source.ImageStatic({
+    url: previewUrl,
+    // The PNG covers exactly the raster's footprint in its own CRS — the
+    // same `extent` we already use for the layer and for view.fit().
+    imageExtent: extent,
+    // Same projection as the custom CRS we registered for this raster, so
+    // OL does not try to reproject the image.
     projection,
-    // Don't request a new image on every tiny pan — 0 means OL handles it.
-    ratio: 1,
-    // The key: OL calls this whenever it needs an image for the current
-    // viewport. We compute the bbox and the exact pixel size.
-    imageFunction: (imageExtent, _resolution, _pixelRatio, imageSize) => {
-      const [ex0, ey0, ex1, ey1] = imageExtent;
-      // imageSize is [width, height] in CSS pixels that the image will
-      // occupy on screen. Cap to a sane maximum so a giant monitor cannot
-      // make the backend produce a 10000x10000 PNG.
-      const w = Math.max(1, Math.min(Math.round(imageSize[0]), 4096));
-      const h = Math.max(1, Math.min(Math.round(imageSize[1]), 4096));
-      const url =
-        `${BACKEND}/api/geotiff/${meta.id}/viewport` +
-        `?minX=${ex0}&minY=${ey0}&maxX=${ex1}&maxY=${ey1}` +
-        `&width=${w}&height=${h}`;
-      // OL expects a CanvasImageSource (HTMLImageElement, ImageBitmap,
-      // HTMLCanvasElement, OffscreenCanvas). Returning an HTMLImageElement
-      // is the simplest path — the browser fetches the URL and fires load.
-      //
-      // Do NOT set crossOrigin here: our /viewport endpoint is same-origin
-      // (served by the same FastAPI process), so CORS is not needed. Setting
-      // crossOrigin: "anonymous" on the same-origin image makes OL 10.0
-      // throw "Cannot read properties of undefined (reading 'call')" in
-      // ImageCanvas.js — apparently an internal race between the image
-      // load event and the canvas source registration.
-      const img = new Image();
-      img.src = url;
-      return img;
-    },
   });
   rasterLayer = new ol.layer.Image({
-    // Clip the layer to the raster's own extent so OL never asks for the
-    // raster beyond its bounds — the backend already returns transparent
-    // pixels there, but clipping avoids pointless requests.
+    // Clip the layer to the raster's own extent so OL never paints the
+    // image outside its bounds.
     extent,
     source: rasterImageSource,
   });
