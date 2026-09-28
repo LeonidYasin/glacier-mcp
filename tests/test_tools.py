@@ -31,7 +31,7 @@ def _reset_state(square_side: float = 10.0) -> None:
     state._redo.clear()  # noqa: SLF001
 
 
-def setup_function(_func) -> None:  # noqa: ANN001 - pytest hook
+def setup_function(_func) -> None:
     _reset_state()
 
 
