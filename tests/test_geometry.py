@@ -59,7 +59,7 @@ def test_delete_vertex_refuses_when_only_three_left() -> None:
 
 def test_translate_polygon() -> None:
     p = g.translate_polygon(_square(), 100.0, -50.0)
-    xs, ys = zip(*g.vertices(p))
+    xs, ys = zip(*g.vertices(p), strict=True)
     assert min(xs) == 100.0
     assert max(xs) == 110.0
     assert min(ys) == -50.0
