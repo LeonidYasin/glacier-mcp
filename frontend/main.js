@@ -47,6 +47,12 @@ function connectWebSocket() {
       // layer and, when the server sent a bbox, recenter the view so the
       // user actually sees the scene instead of an empty ocean.
       applyGeeBasemapFromServer(msg);
+    } else if (msg.type === "layers_state") {
+      // Server is the source of truth for the layer registry: it sends the
+      // full list on connect and after every mutation (MCP tool or REST),
+      // and we redraw from it. Any layer we already have locally keeps its
+      // ol object (no flicker / no re-tiling); only metadata is re-applied.
+      applyLayersStateFromServer(msg.layers || []);
     } else if (msg.type === "capture_map_request") {
       // Server (agent via MCP tool) asks us to screenshot the map.
       // Reply with the same request_id so the server can match it.
