@@ -983,6 +983,73 @@ def gee_basemap_endpoint(body: GeeBasemapRequest) -> JSONResponse:
     return JSONResponse(result)
 
 
+# ---- layers REST ----------------------------------------------------------
+
+
+class LayerCreateRequest(BaseModel):
+    id: str
+    kind: str = "xyz"
+    name: str | None = None
+    url: str | None = None
+    opacity: float = 1.0
+    visible: bool = True
+
+
+class LayerPatchRequest(BaseModel):
+    opacity: float | None = None
+    visible: bool | None = None
+    to_index: int | None = None
+
+
+@app.get("/api/layers")
+def list_layers() -> JSONResponse:
+    """Return the server-owned layer registry (bottom-to-top order)."""
+    return JSONResponse(layer_store.to_json())
+
+
+@app.post("/api/layers")
+async def create_layer(body: LayerCreateRequest) -> JSONResponse:
+    try:
+        entry = layer_store.add(
+            body.id,
+            body.kind,
+            body.name or body.id,
+            url=body.url,
+            opacity=body.opacity,
+            visible=body.visible,
+        )
+    except LayerError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    await hub.push_layers_state()
+    return JSONResponse({"ok": True, "layer": entry})
+
+
+@app.delete("/api/layers/{layer_id}")
+async def delete_layer(layer_id: str) -> JSONResponse:
+    try:
+        layer_store.remove(layer_id)
+    except LayerError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
+    await hub.push_layers_state()
+    return JSONResponse({"ok": True})
+
+
+@app.patch("/api/layers/{layer_id}")
+async def patch_layer(layer_id: str, body: LayerPatchRequest) -> JSONResponse:
+    """Update opacity / visibility / stacking order of one layer."""
+    try:
+        if body.opacity is not None:
+            layer_store.set_opacity(layer_id, body.opacity)
+        if body.visible is not None:
+            layer_store.set_visible(layer_id, body.visible)
+        if body.to_index is not None:
+            layer_store.reorder(layer_id, body.to_index)
+    except LayerError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    await hub.push_layers_state()
+    return JSONResponse({"ok": True, "layer": layer_store.get(layer_id)})
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await hub.connect(ws)
