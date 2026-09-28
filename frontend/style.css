@@ -44,6 +44,33 @@ body {
   background: #2c5282;
 }
 
+/* Secondary button (Undo / Redo): outlined, muted. */
+#toolbar .btn.btn-secondary {
+  background: transparent;
+  border: 1px solid #4a5568;
+  color: #cbd5e0;
+}
+
+#toolbar .btn.btn-secondary:hover {
+  background: #2d3748;
+}
+
+/* Accent button (Export): green, distinct from Load. */
+#toolbar .btn.btn-accent {
+  background: #2f855a;
+}
+
+#toolbar .btn.btn-accent:hover {
+  background: #276749;
+}
+
+/* Native <button> needs explicit cursor + reset for consistency with <label>. */
+#toolbar button {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+
 /* Hide the native file input; the <label> is the visible control. */
 #geotiff-file {
   display: none;
