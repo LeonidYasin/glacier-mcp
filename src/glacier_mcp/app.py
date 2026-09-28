@@ -191,7 +191,7 @@ async def delete_polygon(index: int) -> JSONResponse:
     state = get_state()
     try:
         state.remove_polygon(index)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await _broadcast_state()
     return JSONResponse(state.to_geojson())
