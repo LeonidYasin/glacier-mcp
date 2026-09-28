@@ -79,6 +79,11 @@ select = [
     "F",    # pyflakes
     "W",    # pycodestyle warnings
     "B",    # flake8-bugbear
+    # BLE001 (blind except) forces every ``except Exception:`` in the code
+    # to carry an explicit ``# noqa: BLE001`` with a reason. We use that
+    # to mark the handful of deliberate broad excepts in the OAuth / EE
+    # plumbing (see app.py and gee.py) so the intent is visible at a glance.
+    "BLE",
     "UP",   # pyupgrade
     "RUF",  # ruff-specific
     "SLF",  # flake8-self (private member access)
