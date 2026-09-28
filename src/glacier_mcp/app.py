@@ -707,25 +707,60 @@ def geotiff_viewport(
 
 # ---- Google Earth Engine OAuth --------------------------------------------
 #
-# In-memory session store. Single-user localhost app: one entry per
-# session cookie is plenty, and we deliberately do NOT persist OAuth
-# tokens to disk — a restart logs everyone out, which is the right
-# default for something holding a Google refresh token.
-#
 # The flow, from the browser's point of view:
 #
 #   1. UI clicks "Sign in with Google" -> GET /api/gee/auth/start
 #   2. We 302 the browser to google.com with our client_id + a random
-#      `state` (CSRF guard, stored in a short-lived cookie).
+#      `state` (CSRF guard).
 #   3. The user signs in *as themselves* on Google and approves access.
 #   4. Google redirects back to /api/gee/auth/callback?code=...&state=...
 #   5. We verify `state`, exchange `code` for a refresh token, stash the
 #      credentials in `_gee_sessions`, and redirect back to the map.
 #
+# Where does `state` live? In-process, NOT in a cookie. We initially used
+# a short-lived cookie, but modern Chrome refuses to send SameSite=Lax
+# cookies on the cross-site navigation from google.com back to
+# 127.0.0.1, which broke every login with 'state mismatch'. An in-memory
+# dict sidesteps the whole SameSite story and is fine for a single-user
+# localhost app — the process owns the state from /start to /callback.
+#
 # The client_id / client_secret are the *application's* identity with
 # Google (see src/glacier_mcp/gee.py for details); they are read from the
 # environment and never touch the repository.
+_GEE_STATE_TTL_S = 600  # 10 minutes to complete the consent screen
+
+#: request state (str) -> monotonic timestamp (float, seconds).
+_gee_states: dict[str, float] = {}
+
+#: session id (str) -> signed-in user. Cleared on logout / process exit.
 _gee_sessions: dict[str, gee.UserCredentials] = {}
+
+
+def _issue_state() -> str:
+    """Generate and remember a fresh CSRF state for one OAuth round-trip."""
+    import time as _time
+
+    now = _time.monotonic()
+    # Sweep expired entries first so the dict cannot grow unbounded if a
+    # user abandons the consent screen repeatedly.
+    for k, ts in list(_gee_states.items()):
+        if now - ts > _GEE_STATE_TTL_S:
+            _gee_states.pop(k, None)
+    state = secrets.token_urlsafe(24)
+    _gee_states[state] = now
+    return state
+
+
+def _consume_state(state: str | None) -> bool:
+    """Return True iff `state` is known and not expired; pop it either way."""
+    import time as _time
+
+    if not state:
+        return False
+    ts = _gee_states.pop(state, None)
+    if ts is None:
+        return False
+    return (_time.monotonic() - ts) <= _GEE_STATE_TTL_S
 
 
 def _gee_session_id(request: Request) -> str | None:
