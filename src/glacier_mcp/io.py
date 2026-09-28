@@ -222,8 +222,11 @@ def render_tile_png(
         _sys.stderr.write(
             f"[render_tile_png] z={z} x={x} y={y}\n"
             f"  raster_w={raster_w} raster_h={raster_h} bands={bands}\n"
-            f"  left={left:.2f} top={top:.2f} right={right:.2f} bottom={bottom:.2f}\n"
-            f"  width_crs={width_crs:.2f} height_crs={height_crs:.2f} max_span_crs={max_span_crs:.2f}\n"
+            f"  left={left:.2f} top={top:.2f} "
+            f"right={right:.2f} bottom={bottom:.2f}\n"
+            f"  width_crs={width_crs:.2f} "
+            f"height_crs={height_crs:.2f} "
+            f"max_span_crs={max_span_crs:.2f}\n"
             f"  grid={grid} tile_span_crs={tile_span_crs:.4f}\n"
         )
         _sys.stderr.flush()
@@ -427,13 +430,10 @@ def render_viewport_png(
         col_f0, row_f0 = inv * (min_x, max_y)  # top-left corner in CRS
         col_f1, row_f1 = inv * (max_x, min_y)  # bottom-right corner in CRS
 
-        col_off = int(round(min(col_f0, col_f1)))
-        row_off = int(round(min(row_f0, row_f1)))
-        col_end = int(round(max(col_f0, col_f1)))
-        row_end = int(round(max(row_f0, row_f1)))
-
-        win_w = max(1, col_end - col_off)
-        win_h = max(1, row_end - row_off)
+        col_off = round(min(col_f0, col_f1))
+        row_off = round(min(row_f0, row_f1))
+        col_end = round(max(col_f0, col_f1))
+        row_end = round(max(row_f0, row_f1))
 
         # Clamp to raster bounds. If the requested bbox is entirely outside
         # the raster, return a fully transparent PNG of the requested size.
