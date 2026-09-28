@@ -59,6 +59,17 @@ mcp = FastMCP(
     stateless_http=True,
     json_response=True,
     transport_security=TransportSecuritySettings(
+        # NOTE: DNS-rebinding protection is DISABLED because the MCP SDK's
+        # origin matching does NOT accept `chrome-extension://<id>` origins
+        # (Chrome extensions have no host component, so the RFC-3986 origin
+        # parser rejects them). Enabling the protection blocks the DeepSeek++
+        # plugin with HTTP 403 `Invalid Origin header`, even with the
+        # extension ID explicitly listed in `allowed_origins`.
+        #
+        # The server binds to 127.0.0.1 only, so remote DNS-rebinding is not
+        # a threat in practice — a browser on another host cannot reach this
+        # port, and a same-host browser cannot be used for DNS rebinding.
+        enable_dns_rebinding_protection=False,
         allowed_hosts=_MCP_ALLOWED_HOSTS,
         allowed_origins=_MCP_ALLOWED_ORIGINS,
     ),
