@@ -11,7 +11,10 @@
     <div id="toolbar">
       <label for="geotiff-file" class="btn">Load GeoTIFF</label>
       <input type="file" id="geotiff-file" accept=".tif,.tiff" />
-      <span id="geotiff-info">No raster loaded — drawing works, map is blank.</span>
+      <button type="button" id="btn-undo" class="btn btn-secondary" title="Undo last edit">Undo</button>
+      <button type="button" id="btn-redo" class="btn btn-secondary" title="Redo last undone edit">Redo</button>
+      <button type="button" id="btn-export" class="btn btn-accent" title="Download shapefile (ZIP)">Export shapefile</button>
+      <span id="geotiff-info">No raster loaded — draw polygons, then export.</span>
       <span id="status">loading...</span>
     </div>
     <div id="map"></div>
