@@ -180,23 +180,48 @@ async function handleFileUpload(event) {
 }
 
 function applyGeoTiffToMap(meta) {
-  // 1. Register the raster's CRS with proj4 (needs WKT) and OL.
+  // Sanity checks first, so we surface a useful message instead of a
+  // bare TypeError from inside proj4/OL.
+  if (!meta || !meta.crs_wkt) {
+    throw new Error("Server returned no crs_wkt — GeoTIFF has no usable CRS.");
+  }
+  if (typeof proj4 === "undefined") {
+    throw new Error("proj4js not loaded (blocked CDN?) — cannot register CRS.");
+  }
+
   const crsCode = `RASTER:${meta.id}`;
-  proj4.defs(crsCode, meta.crs_wkt);
-  ol.proj.proj4.register(proj4);
+  // Register the raster's WKT under an opaque code. proj4.defs accepts a
+  // WKT string; it returns a converter object we do not need here.
+  try {
+    proj4.defs(crsCode, meta.crs_wkt);
+  } catch (e) {
+    throw new Error(`proj4.defs failed for ${crsCode}: ${e && e.message ? e.message : e}`);
+  }
 
-  // 2. Build an OL projection object with the bounds as its extent.
+  // Build an OL projection object. Units are chosen from the WKT when
+  // possible; a geographic CRS is in degrees, a projected one in metres.
   const extent = meta.bounds; // [left, bottom, right, top]
-  const projection = new ol.proj.Projection({
-    code: crsCode,
-    units: meta.crs_epsg && meta.crs_epsg !== 4326 ? "m" : "degrees",
-    extent: extent,
-    axisOrientation: "enu",
-  });
-  ol.proj.addProjection(projection);
+  const wktSaysProjected =
+    meta.crs_wkt.includes("PROJCS") || /\bunits\s*=\s*m/.test(meta.crs_wkt);
+  const units = wktSaysProjected ? "m" : "degrees";
 
-  // 3. Remove any previous raster layer, then add the new one.
-  if (rasterLayer) map.removeLayer(rasterLayer);
+  let projection;
+  try {
+    projection = new ol.proj.Projection({
+      code: crsCode,
+      units: units,
+      extent: extent,
+      axisOrientation: "enu",
+    });
+  } catch (e) {
+    throw new Error(`OL Projection failed: ${e && e.message ? e.message : e}`);
+  }
+
+  // Remove any previous raster layer, then add the new one *under* the
+  // vector layer so the polygon stays visible above the raster.
+  if (rasterLayer) {
+    map.removeLayer(rasterLayer);
+  }
   rasterLayer = new ol.layer.Image({
     source: new ol.source.ImageStatic({
       url: `${BACKEND}/api/geotiff/${meta.id}/preview.png`,
@@ -204,12 +229,11 @@ function applyGeoTiffToMap(meta) {
       projection: projection,
     }),
   });
-  // Raster goes *under* the vector layer.
   map.getLayers().insertAt(0, rasterLayer);
 
-  // 4. Switch the view to the raster's CRS. Existing features in the old
-  //    CRS would be meaningless now, so clear the vector layer - the
-  //    polygon will be redrawn from scratch in the new CRS.
+  // Switch the view to the raster's CRS. Existing features in the old CRS
+  // would be meaningless now, so clear the vector layer - the polygon is
+  // redrawn from scratch in the new CRS.
   currentCrsCode = crsCode;
   vectorSource.clear();
 
@@ -217,9 +241,11 @@ function applyGeoTiffToMap(meta) {
     (extent[0] + extent[2]) / 2,
     (extent[1] + extent[3]) / 2,
   ];
-  const widthMeters = Math.abs(extent[2] - extent[0]);
-  // Rough zoom: pick a resolution that fits the raster width in ~800px.
-  const resolution = widthMeters / 800;
+  const width = Math.abs(extent[2] - extent[0]);
+  const height = Math.abs(extent[3] - extent[1]);
+  const span = Math.max(width, height) || 1;
+  // Rough resolution: fit the longer dimension into ~800 px.
+  const resolution = span / 800;
 
   map.setView(
     new ol.View({
