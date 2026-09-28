@@ -904,6 +904,19 @@ function updateHudView() {
   hudEls.resolution.textContent =
     res === undefined ? "—" : res.toExponential(3);
   hudEls.center.textContent = `[${hudFmt(c[0])}, ${hudFmt(c[1])}]`;
+  if (hudEls.resLimits) {
+    const maxR = view.getMaxResolution();
+    const minR = view.getMinResolution();
+    hudEls.resLimits.textContent =
+      `${maxR === undefined ? "—" : maxR.toExponential(3)} / ` +
+      `${minR === undefined ? "—" : minR.toExponential(3)}`;
+  }
+  if (hudEls.resArray && _lastResolutions) {
+    hudEls.resArray.textContent = _lastResolutions
+      .slice(0, 3)
+      .map((v) => v.toFixed(2))
+      .join(", ");
+  }
   // eslint-disable-next-line no-console
   console.log("[glacier] view changed: zoom=", z, "resolution=", res, "center=", c);
 }
