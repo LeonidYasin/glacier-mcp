@@ -59,8 +59,14 @@ def get_polygon(polygon_index: int = 0) -> dict:
     """Return one polygon as a GeoJSON Feature (no CRS embedded)."""
     collection = _state.to_geojson()
     features = collection["features"]
+    if not features:
+        raise ValueError(
+            "No polygons in state yet. Draw one in the UI or use add_polygon()."
+        )
     if not -len(features) <= polygon_index < len(features):
-        raise ValueError(f"polygon_index {polygon_index} out of range")
+        raise ValueError(
+            f"polygon_index {polygon_index} out of range (0..{len(features) - 1})"
+        )
     return features[polygon_index]
 
 
