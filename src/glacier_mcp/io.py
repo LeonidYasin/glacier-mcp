@@ -217,11 +217,28 @@ def render_tile_png(
         grid = 2 ** z
         tile_span_crs = max_span_crs / grid
 
+        # DEBUG: log the raster geometry + computed tile span.
+        import sys as _sys
+        _sys.stderr.write(
+            f"[render_tile_png] z={z} x={x} y={y}\n"
+            f"  raster_w={raster_w} raster_h={raster_h} bands={bands}\n"
+            f"  left={left:.2f} top={top:.2f} right={right:.2f} bottom={bottom:.2f}\n"
+            f"  width_crs={width_crs:.2f} height_crs={height_crs:.2f} max_span_crs={max_span_crs:.2f}\n"
+            f"  grid={grid} tile_span_crs={tile_span_crs:.4f}\n"
+        )
+        _sys.stderr.flush()
+
         # CRS bounds of this tile (x grows right, y grows down from top).
         tile_left = left + x * tile_span_crs
         tile_right = tile_left + tile_span_crs
         tile_top = top - y * tile_span_crs
         tile_bottom = tile_top - tile_span_crs
+
+        _sys.stderr.write(
+            f"  tile_left={tile_left:.2f} tile_right={tile_right:.2f} "
+            f"tile_top={tile_top:.2f} tile_bottom={tile_bottom:.2f}\n"
+        )
+        _sys.stderr.flush()
 
         # Convert the CRS corners back to pixel coordinates via the
         # inverse affine transform. `~transform * (crs_x, crs_y)` gives
