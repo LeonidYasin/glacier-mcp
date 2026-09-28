@@ -95,9 +95,15 @@ function initMap() {
   map.addInteraction(modify);
 
   draw.on("drawend", (evt) => {
-    vectorSource.clear();
-    vectorSource.addFeature(evt.feature);
-    sendPolygon(evt.feature.getGeometry());
+    // OL already added evt.feature to vectorSource when Draw({source}) is
+    // configured. Calling clear() + addFeature() re-adds the same object
+    // and triggers: "The passed 'feature' was already added to the source".
+    // Instead, drop every *other* feature and keep the fresh one.
+    const keep = evt.feature;
+    for (const f of vectorSource.getFeatures().slice()) {
+      if (f !== keep) vectorSource.removeFeature(f);
+    }
+    sendPolygon(keep.getGeometry());
   });
 
   modify.on("modifyend", () => {
