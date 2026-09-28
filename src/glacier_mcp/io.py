@@ -377,13 +377,155 @@ def render_tile_png(
     return buf.getvalue()
 
 
-def _transparent_png(tile_size: int = 256) -> bytes:
-    """A fully transparent tile of the given side length."""
+def render_viewport_png(
+    raster_path: Path,
+    min_x: float,
+    min_y: float,
+    max_x: float,
+    max_y: float,
+    out_w: int,
+    out_h: int,
+) -> bytes:
+    """Render an arbitrary viewport of the source raster as an RGBA PNG.
+
+    Unlike `render_tile_png`, this is NOT tied to a fixed 256x256 tile grid.
+    The caller supplies a bounding box in the raster's own CRS (typically the
+    current OpenLayers view extent) and the desired output size in pixels
+    (typically the size of the map viewport on screen). We read exactly the
+    raster pixels covered by that bbox and return a single PNG that the
+    browser can draw directly.
+
+    Resampling rules (same philosophy as render_tile_png):
+
+      * If the raster window has MORE pixels than the output image
+        (i.e. we are zoomed out past the raster's native resolution),
+        just CROP a symmetric sub-window — no resampling, no blur.
+      * If the raster window has FEWER pixels than the output image
+        (i.e. we are zoomed in past the raster's native resolution),
+        use Image.NEAREST so each raster pixel becomes a solid NxN block.
+
+    No BILINEAR — the user explicitly wants either 1:1 or pixelated.
+    """
+    import rasterio
+    from rasterio.windows import Window
+    from PIL import Image
+
+    out_w = max(1, int(out_w))
+    out_h = max(1, int(out_h))
+
+    with rasterio.open(raster_path) as src:
+        raster_w = src.width
+        raster_h = src.height
+        bands = src.count
+        transform = src.transform
+
+        # Convert the CRS bbox to pixel coordinates via the inverse affine.
+        inv = ~transform
+        # bbox in CRS is (min_x, min_y, max_x, max_y) with y going up in CRS.
+        # Rasterio row coordinates increase downward, so map both corners
+        # and take min/max to get the pixel window.
+        col_f0, row_f0 = inv * (min_x, max_y)  # top-left corner in CRS
+        col_f1, row_f1 = inv * (max_x, min_y)  # bottom-right corner in CRS
+
+        col_off = int(round(min(col_f0, col_f1)))
+        row_off = int(round(min(row_f0, row_f1)))
+        col_end = int(round(max(col_f0, col_f1)))
+        row_end = int(round(max(row_f0, row_f1)))
+
+        win_w = max(1, col_end - col_off)
+        win_h = max(1, row_end - row_off)
+
+        # Clamp to raster bounds. If the requested bbox is entirely outside
+        # the raster, return a fully transparent PNG of the requested size.
+        if col_off >= raster_w or row_off >= raster_h or col_end <= 0 or row_end <= 0:
+            return _transparent_png_size(out_w, out_h)
+
+        src_col = max(0, col_off)
+        src_row = max(0, row_off)
+        src_col_end = min(raster_w, col_end)
+        src_row_end = min(raster_h, row_end)
+        read_w = max(1, src_col_end - src_col)
+        read_h = max(1, src_row_end - src_row)
+
+        window = Window(src_col, src_row, read_w, read_h)
+        data = src.read(window=window)  # shape (bands, read_h, read_w)
+
+        # Build a PIL image from the data.
+        if bands >= 3:
+            rgb = data[:3].transpose(1, 2, 0)
+            img = Image.fromarray(rgb, mode="RGB")
+        elif bands == 2:
+            gray = data[0]
+            img = Image.fromarray(gray, mode="L").convert("RGB")
+        else:
+            gray = data[0]
+            img = Image.fromarray(gray, mode="L").convert("RGB")
+
+        # Resample into the output size, using the crop-vs-nearest rule.
+        if read_w >= out_w and read_h >= out_h:
+            # Downsampling: crop symmetric sub-window — no blur.
+            off_x = max(0, (read_w - out_w) // 2)
+            off_y = max(0, (read_h - out_h) // 2)
+            cropped = img.crop((off_x, off_y, off_x + out_w, off_y + out_h))
+        else:
+            # Upsampling: nearest-neighbour — pixelated GIS look.
+            cropped = img.resize((out_w, out_h), Image.NEAREST)
+
+        # Place the cropped content at the correct offset within the full
+        # viewport canvas, so partial coverage on the edges is transparent.
+        canvas = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 0))
+
+        # Where the raster content sits inside the requested bbox:
+        # fraction of the bbox that is actually covered by the raster.
+        # x fraction: pixels before src_col vs total window pixels.
+        full_w = max(1, col_end - col_off)
+        full_h = max(1, row_end - row_off)
+        paste_x_frac = (src_col - col_off) / full_w
+        paste_y_frac = (src_row - row_off) / full_h
+        content_w_frac = read_w / full_w
+        content_h_frac = read_h / full_h
+
+        paste_x = round(paste_x_frac * out_w)
+        paste_y = round(paste_y_frac * out_h)
+        content_w = round(content_w_frac * out_w)
+        content_h = round(content_h_frac * out_h)
+
+        if content_w > 0 and content_h > 0:
+            # Now fit cropped (which is read_w x read_h, already resampled
+            # for the visible extent) into the (content_w x content_h)
+            # region inside the canvas.
+            if cropped.size != (content_w, content_h):
+                if cropped.width >= content_w and cropped.height >= content_h:
+                    off_x = max(0, (cropped.width - content_w) // 2)
+                    off_y = max(0, (cropped.height - content_h) // 2)
+                    cropped = cropped.crop(
+                        (off_x, off_y, off_x + content_w, off_y + content_h)
+                    )
+                else:
+                    cropped = cropped.resize(
+                        (content_w, content_h), Image.NEAREST
+                    )
+            canvas.paste(cropped, (paste_x, paste_y))
+
+    buf = stdlib_io.BytesIO()
+    canvas.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def _transparent_png_size(w: int, h: int) -> bytes:
+    """A fully transparent PNG of arbitrary size."""
     from PIL import Image
 
     buf = stdlib_io.BytesIO()
-    Image.new("RGBA", (tile_size, tile_size), (0, 0, 0, 0)).save(buf, format="PNG")
+    Image.new("RGBA", (max(1, w), max(1, h)), (0, 0, 0, 0)).save(
+        buf, format="PNG"
+    )
     return buf.getvalue()
+
+
+def _transparent_png(tile_size: int = 256) -> bytes:
+    """A fully transparent square tile (legacy, used by render_tile_png)."""
+    return _transparent_png_size(tile_size, tile_size)
 
 
 def polygon_to_crs(polygon: Polygon, from_crs: CRS, to_crs: CRS) -> Polygon:
