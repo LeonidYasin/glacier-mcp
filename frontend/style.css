@@ -536,13 +536,14 @@ body {
 .ol-scale-line {
   background: rgba(0, 0, 0, 0.65);
   /*
-   * Centre the scale bar horizontally along the bottom of the map.
-   * `left: 50%` + `translateX(-50%)` keeps it centred regardless of
-   * viewport width, without needing to know its own width. The bar has
-   * no drag behaviour on purpose: after a page reload it always snaps
-   * back to this fixed bottom-centre position.
+   * Centre the scale bar horizontally over the map, just above the
+   * polygon panel. `left: 50%` + `translateX(-50%)` centres it without
+   * knowing its own width; the 56px bottom offset clears the 44px-tall
+   * `#polygon-panel` (see `#map { inset: 40px 0 44px 0; }`) plus a
+   * 12px margin. No drag behaviour on purpose — after a page reload the
+   * bar always snaps back to this fixed bottom-centre position.
    */
-  bottom: 12px;
+  bottom: 56px;
   left: 50%;
   transform: translateX(-50%);
   padding: 2px 8px;
