@@ -895,6 +895,15 @@ function installHud() {
   map.getView().on("change:resolution", updateHudView);
   map.getView().on("change:center", updateHudView);
   map.on("pointermove", updateHudMouse);
+  const toggleBtn = document.getElementById("hud-toggle");
+  if (toggleBtn && hudRoot) {
+    toggleBtn.addEventListener("click", () => {
+      hudRoot.classList.toggle("hud-collapsed");
+      toggleBtn.textContent = hudRoot.classList.contains("hud-collapsed")
+        ? "▸"
+        : "▾";
+    });
+  }
   document.addEventListener("keydown", (e) => {
     if ((e.key === "d" || e.key === "D") && hudRoot) {
       const tag = e.target && e.target.tagName;
