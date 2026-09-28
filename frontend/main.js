@@ -481,6 +481,109 @@ function updateDeleteButton() {
   btn.disabled = typeof selectedIndex !== "number";
 }
 
+// ---- Modal with the full polygon list -------------------------------------
+//
+// The bottom chip row works for a handful of glaciers but scrolls off screen
+// for 100+. The modal is a proper table with a search box, so a big session
+// stays navigable. Clicking a row selects that polygon on the map; the × on
+// a row removes it.
+
+function openPolygonModal() {
+  const modal = document.getElementById("polygon-modal");
+  if (!modal) return;
+  renderModalTable(currentCollection());
+  if (!modal.open) modal.showModal();
+  const search = document.getElementById("modal-search");
+  if (search) search.focus();
+}
+
+function closePolygonModal() {
+  const modal = document.getElementById("polygon-modal");
+  if (modal && modal.open) modal.close();
+}
+
+function renderModalTable(fc) {
+  const tbody = document.getElementById("modal-tbody");
+  if (!tbody) return;
+  const features = (fc && fc.features) || [];
+
+  const searchEl = document.getElementById("modal-search");
+  const query = ((searchEl && searchEl.value) || "").trim().toLowerCase();
+
+  const countEl = document.getElementById("modal-count");
+  if (countEl) countEl.textContent = String(features.length);
+
+  const emptyEl = document.getElementById("modal-empty");
+
+  const visible = features.filter((f) => {
+    const name = String((f.properties && f.properties.name) || "").toLowerCase();
+    return query === "" || name.includes(query);
+  });
+
+  if (emptyEl) {
+    // Show the empty hint only when there are no polygons at all, not when
+    // the search filtered everything out (then the table header is enough).
+    emptyEl.hidden = features.length > 0;
+  }
+
+  tbody.innerHTML = "";
+  for (const feature of visible) {
+    const idx = feature.properties ? feature.properties.index : null;
+    if (typeof idx !== "number") continue;
+    const name = (feature.properties && feature.properties.name) || `glacier_${idx + 1}`;
+    // The closed ring has the first vertex repeated at the end; subtract it.
+    let vertices = 0;
+    const coords =
+      feature.geometry && feature.geometry.coordinates && feature.geometry.coordinates[0];
+    if (Array.isArray(coords)) vertices = Math.max(0, coords.length - 1);
+
+    const tr = document.createElement("tr");
+    tr.dataset.index = String(idx);
+    if (idx === selectedIndex) tr.classList.add("row-selected");
+
+    const tdNum = document.createElement("td");
+    tdNum.className = "modal-num";
+    tdNum.textContent = String(idx + 1);
+
+    const tdName = document.createElement("td");
+    tdName.className = "modal-name";
+    tdName.textContent = name;
+    tdName.title = name;
+
+    const tdV = document.createElement("td");
+    tdV.className = "modal-vertices";
+    tdV.textContent = String(vertices);
+
+    const tdA = document.createElement("td");
+    tdA.className = "modal-actions";
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "modal-delete";
+    delBtn.textContent = "×";
+    delBtn.title = `Delete ${name}`;
+    delBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      sendDeletePolygon(idx);
+    });
+    tdA.appendChild(delBtn);
+
+    tr.appendChild(tdNum);
+    tr.appendChild(tdName);
+    tr.appendChild(tdV);
+    tr.appendChild(tdA);
+
+    tr.addEventListener("click", () => {
+      selectedIndex = idx;
+      vectorLayer.changed();
+      renderPolygonChips(currentCollection());
+      renderModalTable(currentCollection());
+      setStatus(`selected: ${name} — Delete to remove, drag vertices to edit`);
+    });
+
+    tbody.appendChild(tr);
+  }
+}
+
 // ---- GeoTIFF upload -------------------------------------------------------
 
 async function handleFileUpload(event) {
