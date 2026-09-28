@@ -292,17 +292,23 @@ async def upload_geotiff(file: UploadFile = File(...)) -> JSONResponse:
             detail=f"Unsupported extension {suffix!r}; expected .tif or .tiff.",
         )
 
-    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    # Write the upload to a directory that survives for the life of the
+    # process. Tile requests open this path lazily, so it must NOT be
+    # deleted after load_geotiff() — that was a bug: tiles returned 500
+    # with `RasterioIOError: No such file or directory` because the temp
+    # file was unlinked in the `finally` below.
+    upload_dir = Path(tempfile.mkdtemp(prefix="glacier_raster_"))
+    raster_path = upload_dir / f"source{suffix}"
     try:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            tmp.write(chunk)
-        tmp.close()
+        with raster_path.open("wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
 
         try:
-            raster = gio.load_geotiff(tmp.name)
+            raster = gio.load_geotiff(raster_path)
         except gio.IOError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
