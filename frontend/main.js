@@ -37,14 +37,86 @@ let ws = null;
 
 function connectWebSocket() {
   ws = new WebSocket(`ws://${window.location.host}/ws`);
-  ws.onmessage = (event) => {
+  ws.onmessage = async (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "polygons") {
       applyCollectionFromServer(msg);
+    } else if (msg.type === "capture_map_request") {
+      // Server (agent via MCP tool) asks us to screenshot the map.
+      // Reply with the same request_id so the server can match it.
+      try {
+        const result = await captureMap(msg.options || {});
+        ws.send(
+          JSON.stringify({
+            type: "capture_map_response",
+            request_id: msg.request_id,
+            ok: true,
+            ...result,
+          })
+        );
+      } catch (err) {
+        ws.send(
+          JSON.stringify({
+            type: "capture_map_response",
+            request_id: msg.request_id,
+            ok: false,
+            error: String(err && err.message ? err.message : err),
+          })
+        );
+      }
     }
   };
   ws.onclose = () => {
     setTimeout(connectWebSocket, 1000);
+  };
+}
+
+// ---- Map screenshot (used by the agent via the capture_map MCP tool) -----
+//
+// Renders the map element with html2canvas, downscales to a thumbnail, and
+// returns both the full-size PNG (base64) and the thumbnail. The server saves
+// the full image to disk and passes the thumbnail to the MCP client.
+//
+// options:
+//   fullViewport (bool, default false) — include the whole page body, not just
+//                                       the #map element.
+//   thumbWidth   (int,  default 512)   — thumbnail width in pixels.
+async function captureMap(options) {
+  const fullViewport = !!options.fullViewport;
+  const thumbWidth = options.thumbWidth || 512;
+  const target = fullViewport ? document.body : document.getElementById("map");
+  if (!target) {
+    throw new Error("capture target not found");
+  }
+  if (typeof html2canvas !== "function") {
+    throw new Error("html2canvas not loaded");
+  }
+  const canvas = await html2canvas(target, {
+    useCORS: true,
+    allowTaint: false,
+    logging: false,
+    backgroundColor: "#000",
+    scale: 1,
+  });
+  const fullDataUrl = canvas.toDataURL("image/png");
+  const fullBase64 = fullDataUrl.replace(/^data:image\/png;base64,/, "");
+  // Downscale thumbnail in a second canvas (browser does the resampling).
+  const ratio = canvas.height / canvas.width;
+  const thumbH = Math.round(thumbWidth * ratio);
+  const thumbCanvas = document.createElement("canvas");
+  thumbCanvas.width = thumbWidth;
+  thumbCanvas.height = thumbH;
+  const ctx = thumbCanvas.getContext("2d");
+  ctx.drawImage(canvas, 0, 0, thumbWidth, thumbH);
+  const thumbDataUrl = thumbCanvas.toDataURL("image/png");
+  const thumbBase64 = thumbDataUrl.replace(/^data:image\/png;base64,/, "");
+  return {
+    full_base64: fullBase64,
+    thumb_base64: thumbBase64,
+    width: canvas.width,
+    height: canvas.height,
+    thumb_width: thumbWidth,
+    thumb_height: thumbH,
   };
 }
 
