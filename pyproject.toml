@@ -66,19 +66,16 @@ select = [
     "SLF",  # flake8-self (private member access)
 ]
 ignore = [
-    "ANN101",  # missing self annotation - not applicable
-    "ANN102",  # missing cls annotation - not applicable
+    "ANN101",  # missing self annotation (removed in newer ruff)
+    "ANN102",  # missing cls annotation (removed in newer ruff)
     "ANN201",  # missing return type for public function - too strict for tests
     "ANN202",  # missing return type for private function
     "ANN204",  # missing return type for __init__
     "ANN401",  # dynamically typed expressions (Any) - we use it deliberately
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = [
-    "ANN001",  # pytest fixtures often untyped
+    "B008",    # function call in default arg - FastAPI Depends() pattern
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+pythonpath = ["src"]
