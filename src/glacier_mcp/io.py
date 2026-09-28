@@ -277,6 +277,12 @@ def render_tile_png(
         read_h = max(1, src_row_end - src_row)
 
         window = Window(src_col, src_row, read_w, read_h)
+        _sys.stderr.write(
+            f"  col_off={col_off} row_off={row_off} col_end={col_end} row_end={row_end}\n"
+            f"  clamped src_col={src_col} src_row={src_row} "
+            f"read_w={read_w} read_h={read_h}\n"
+        )
+        _sys.stderr.flush()
         data = src.read(window=window)  # shape (bands, read_h, read_w)
 
         # Where this read window sits inside the *ideal* tile square.
