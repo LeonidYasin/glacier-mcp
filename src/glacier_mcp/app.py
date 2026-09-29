@@ -56,6 +56,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import gee
 from . import io as gio
+from .layers import LayerError, layer_store
 from .server import get_state
 
 FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
@@ -983,6 +984,73 @@ def gee_basemap_endpoint(body: GeeBasemapRequest) -> JSONResponse:
     return JSONResponse(result)
 
 
+# ---- layers REST ----------------------------------------------------------
+
+
+class LayerCreateRequest(BaseModel):
+    id: str
+    kind: str = "xyz"
+    name: str | None = None
+    url: str | None = None
+    opacity: float = 1.0
+    visible: bool = True
+
+
+class LayerPatchRequest(BaseModel):
+    opacity: float | None = None
+    visible: bool | None = None
+    to_index: int | None = None
+
+
+@app.get("/api/layers")
+def list_layers() -> JSONResponse:
+    """Return the server-owned layer registry (bottom-to-top order)."""
+    return JSONResponse(layer_store.to_json())
+
+
+@app.post("/api/layers")
+async def create_layer(body: LayerCreateRequest) -> JSONResponse:
+    try:
+        entry = layer_store.add(
+            body.id,
+            body.kind,
+            body.name or body.id,
+            url=body.url,
+            opacity=body.opacity,
+            visible=body.visible,
+        )
+    except LayerError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    await hub.push_layers_state()
+    return JSONResponse({"ok": True, "layer": entry})
+
+
+@app.delete("/api/layers/{layer_id}")
+async def delete_layer(layer_id: str) -> JSONResponse:
+    try:
+        layer_store.remove(layer_id)
+    except LayerError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=404)
+    await hub.push_layers_state()
+    return JSONResponse({"ok": True})
+
+
+@app.patch("/api/layers/{layer_id}")
+async def patch_layer(layer_id: str, body: LayerPatchRequest) -> JSONResponse:
+    """Update opacity / visibility / stacking order of one layer."""
+    try:
+        if body.opacity is not None:
+            layer_store.set_opacity(layer_id, body.opacity)
+        if body.visible is not None:
+            layer_store.set_visible(layer_id, body.visible)
+        if body.to_index is not None:
+            layer_store.reorder(layer_id, body.to_index)
+    except LayerError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    await hub.push_layers_state()
+    return JSONResponse({"ok": True, "layer": layer_store.get(layer_id)})
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await hub.connect(ws)
@@ -997,6 +1065,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
             }
         )
     )
+    # The layer registry is server-owned; a freshly connected tab needs a
+    # snapshot before it can render the panel.
+    await ws.send_text(json.dumps(layer_store.to_json()))
     try:
         while True:
             raw = await ws.receive_text()
@@ -1004,8 +1075,26 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 msg = json.loads(raw)
             except (TypeError, ValueError):
                 continue
-            if isinstance(msg, dict) and msg.get("type") == "capture_map_response":
+            if not isinstance(msg, dict):
+                continue
+            kind = msg.get("type")
+            if kind == "capture_map_response":
                 hub.resolve_capture(msg.get("request_id") or "", msg)
+            elif kind == "layer_register":
+                # A GeoTIFF/raster the browser tiled locally announces itself
+                # here so the server store stays authoritative.
+                try:
+                    layer_store.add(
+                        str(msg.get("id") or ""),
+                        str(msg.get("kind") or "geotiff"),
+                        str(msg.get("name") or msg.get("id") or "layer"),
+                        url=msg.get("url"),
+                        opacity=msg.get("opacity", 1.0),
+                        visible=msg.get("visible", True),
+                    )
+                except LayerError:
+                    continue
+                await hub.push_layers_state()
     except WebSocketDisconnect:
         await hub.disconnect(ws)
 

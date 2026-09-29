@@ -569,6 +569,129 @@ def gee_get_basemap(
     return result
 
 
+# ---- layer registry tools -------------------------------------------------
+
+def _schedule_layers_push() -> str:
+    """Broadcast the layer registry from a worker thread.
+
+    MCP tools are sync and run in a worker thread, so they cannot await
+    the hub coroutine. This schedules it on the loop that owns the hub,
+    mirroring the pattern used by ``gee_get_basemap``. Returns a short
+    status string for the tool result ("scheduled" / "no_loop").
+    """
+    import asyncio as _asyncio
+
+    from .app import hub
+
+    loop = getattr(hub, "loop", None)
+    if loop is not None and loop.is_running():
+        _asyncio.run_coroutine_threadsafe(hub.push_layers_state(), loop)
+        return "scheduled"
+    return "no_loop"
+
+
+@mcp.tool()
+def gee_list_layers() -> dict:
+    """Return the server-owned layer registry, bottom-to-top.
+
+    This is the multilayer counterpart of ``list_polygons``: every layer
+    currently on the map — GEE basemaps, uploaded GeoTIFFs, and (later)
+    Soviet topo rasters — is listed with its id, kind, name, url,
+    opacity and visibility, in drawing order (index 0 is the deepest).
+    """
+    from .layers import layer_store
+
+    return layer_store.to_json()
+
+
+@mcp.tool()
+def gee_add_layer(
+    layer_id: str,
+    kind: str = "xyz",
+    name: str | None = None,
+    url: str | None = None,
+    opacity: float = 1.0,
+    visible: bool = True,
+) -> dict:
+    """Add (or replace) a layer in the server registry and push it live.
+
+    kind: one of ``gee``, ``geotiff``, ``xyz``, ``raster``. Re-using an
+    existing ``layer_id`` replaces that entry in place instead of
+    stacking a duplicate — handy when refreshing a basemap.
+    """
+    from .layers import LayerError, layer_store
+
+    try:
+        entry = layer_store.add(
+            layer_id,
+            kind,
+            name or layer_id,
+            url=url,
+            opacity=opacity,
+            visible=visible,
+        )
+    except LayerError as exc:
+        raise ValueError(str(exc)) from exc
+    pushed_to = _schedule_layers_push()
+    return {"ok": True, "layer": entry, "push": pushed_to, "total": len(layer_store)}
+
+
+@mcp.tool()
+def gee_remove_layer(layer_id: str) -> dict:
+    """Remove a layer from the server registry and push the new state."""
+    from .layers import LayerError, layer_store
+
+    try:
+        layer_store.remove(layer_id)
+    except LayerError as exc:
+        raise ValueError(str(exc)) from exc
+    pushed_to = _schedule_layers_push()
+    return {"ok": True, "push": pushed_to, "total": len(layer_store)}
+
+
+@mcp.tool()
+def gee_set_layer_opacity(layer_id: str, opacity: float) -> dict:
+    """Set a layer's opacity (0.0 transparent .. 1.0 opaque)."""
+    from .layers import LayerError, layer_store
+
+    try:
+        entry = layer_store.set_opacity(layer_id, opacity)
+    except LayerError as exc:
+        raise ValueError(str(exc)) from exc
+    pushed_to = _schedule_layers_push()
+    return {"ok": True, "layer": entry, "push": pushed_to}
+
+
+@mcp.tool()
+def gee_set_layer_visible(layer_id: str, visible: bool) -> dict:
+    """Show or hide a layer without removing it."""
+    from .layers import LayerError, layer_store
+
+    try:
+        entry = layer_store.set_visible(layer_id, visible)
+    except LayerError as exc:
+        raise ValueError(str(exc)) from exc
+    pushed_to = _schedule_layers_push()
+    return {"ok": True, "layer": entry, "push": pushed_to}
+
+
+@mcp.tool()
+def gee_reorder_layer(layer_id: str, to_index: int) -> dict:
+    """Move a layer to ``to_index`` (0 = bottom, -1/last = top).
+
+    ``to_index`` is clamped into the valid range, so passing a large
+    number reliably means "bring to front".
+    """
+    from .layers import LayerError, layer_store
+
+    try:
+        entry = layer_store.reorder(layer_id, to_index)
+    except LayerError as exc:
+        raise ValueError(str(exc)) from exc
+    pushed_to = _schedule_layers_push()
+    return {"ok": True, "layer": entry, "push": pushed_to, "layers": layer_store.list()}
+
+
 def run(host: str = "127.0.0.1", port: int = 8766) -> None:
     """Start the streamable-http MCP server on ``host:port``."""
     mcp.settings.host = host

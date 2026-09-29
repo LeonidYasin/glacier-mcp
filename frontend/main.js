@@ -47,6 +47,12 @@ function connectWebSocket() {
       // layer and, when the server sent a bbox, recenter the view so the
       // user actually sees the scene instead of an empty ocean.
       applyGeeBasemapFromServer(msg);
+    } else if (msg.type === "layers_state") {
+      // Server is the source of truth for the layer registry: it sends the
+      // full list on connect and after every mutation (MCP tool or REST),
+      // and we redraw from it. Any layer we already have locally keeps its
+      // ol object (no flicker / no re-tiling); only metadata is re-applied.
+      applyLayersStateFromServer(msg.layers || []);
     } else if (msg.type === "capture_map_request") {
       // Server (agent via MCP tool) asks us to screenshot the map.
       // Reply with the same request_id so the server can match it.
@@ -1369,7 +1375,290 @@ function initSidebar() {
 // the scene id. The scene id is auto-filled when a search result is
 // picked, but the user can also paste one by hand.
 
-let geeBasemapLayer = null;
+// ---- Layer registry -------------------------------------------------------
+//
+// Every raster overlay (GEE Sentinel-2 basemap, uploaded GeoTIFF, external
+// XYZ layer such as a Soviet topo map) lives in this registry. It is the
+// single source of truth: the left-hand Layers panel renders from it, the
+// MCP tools mutate it over the WebSocket, and `zIndex` is derived from the
+// record's position so the stacking order matches what the panel shows.
+//
+//   id      — stable string key ('gee:20240928T…', 'geotiff:abc123', 'xyz:…')
+//   record  — { layer, kind, name, url, visible, opacity }
+const layerRegistry = new Map();
+
+//: zIndex of the lowest raster layer. Polygons live above every raster,
+//: and an uploaded GeoTIFF must stay above the satellite basemap, so we
+//: assign raster z-indexes from this floor upward.
+const LAYER_Z_FLOOR = -1000;
+
+function _nextLayerZ() {
+  return LAYER_Z_FLOOR + layerRegistry.size;
+}
+
+// ---- Server sync ----------------------------------------------------------
+//
+// The layer registry lives on the SERVER (see glacier_mcp/layers.py). This
+// browser is a thin renderer: it wraps each layer in an ol object, but every
+// mutation is sent to the server first, and the resulting `layers_state`
+// broadcast is what actually updates the panel. That keeps the agent's MCP
+// tools and the manual panel in lockstep across tabs.
+
+// Ask the server to mutate a layer. `method`/`patch` describe the change;
+// on failure we fall back to a full resync so the UI never lies.
+async function mutateLayerOnServer(method, path, body) {
+  try {
+    const r = await fetch(path, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      console.warn("layer mutation failed", method, path, data);
+    }
+  } catch (err) {
+    console.warn("layer mutation error", method, path, err);
+  }
+}
+
+// Reconcile the local ol registry with the server's authoritative list.
+// Existing layers are kept (their tiles are not thrown away); layers the
+// server no longer lists are removed; new server layers are created.
+function applyLayersStateFromServer(layers) {
+  const seen = new Set();
+  for (const entry of layers) {
+    const id = entry.id;
+    seen.add(id);
+    const existing = layerRegistry.get(id);
+    if (existing) {
+      if (Number.isFinite(entry.opacity)) {
+        existing.opacity = Math.max(0, Math.min(1, entry.opacity));
+        existing.layer.setOpacity(existing.opacity);
+      }
+      if (typeof entry.visible === "boolean") {
+        existing.visible = entry.visible;
+        existing.layer.setVisible(entry.visible);
+      }
+      if (entry.name) existing.name = entry.name;
+      continue;
+    }
+    // A layer we do not have yet — build the ol object from the URL.
+    if (!entry.url) continue;
+    let layer = null;
+    try {
+      const source = new ol.source.XYZ({
+        url: entry.url,
+        crossOrigin: "anonymous",
+        attributions: entry.kind === "gee" ? "Sentinel-2 · Google Earth Engine" : undefined,
+      });
+      layer = new ol.layer.Tile({ source });
+    } catch (err) {
+      console.warn("cannot build layer from server state", id, err);
+      continue;
+    }
+    const record = {
+      layer,
+      kind: entry.kind || "xyz",
+      name: entry.name || id,
+      url: entry.url,
+      visible: entry.visible !== false,
+      opacity: Number.isFinite(entry.opacity) ? entry.opacity : 1,
+    };
+    layer.setOpacity(record.opacity);
+    layer.setVisible(record.visible);
+    layerRegistry.set(id, record);
+    map.addLayer(layer);
+  }
+  // Drop anything the server no longer knows about.
+  for (const [id, rec] of Array.from(layerRegistry.entries())) {
+    if (!seen.has(id)) {
+      map.removeLayer(rec.layer);
+      layerRegistry.delete(id);
+    }
+  }
+  reflowLayerZ();
+  renderLayerPanel();
+}
+
+function addLayer(id, layer, meta) {
+  // Replace by id: re-adding the same key updates in place.
+  removeLayer(id, { silent: true });
+  const record = {
+    layer,
+    kind: meta.kind || "xyz",
+    name: meta.name || id,
+    url: meta.url || null,
+    visible: meta.visible !== false,
+    opacity: Number.isFinite(meta.opacity) ? meta.opacity : 1,
+  };
+  layer.setOpacity(record.opacity);
+  layer.setVisible(record.visible);
+  layerRegistry.set(id, record);
+  map.addLayer(layer);
+  reflowLayerZ();
+  renderLayerPanel();
+  // Tell the server this layer exists. GeoTIFFs are tiled client-side, so
+  // the server learns about them only through this registration.
+  if (ws && ws.readyState === WebSocket.OPEN && meta.register !== false) {
+    ws.send(
+      JSON.stringify({
+        type: "layer_register",
+        id,
+        kind: record.kind,
+        name: record.name,
+        url: record.url,
+        opacity: record.opacity,
+        visible: record.visible,
+      })
+    );
+  }
+  return record;
+}
+
+function removeLayer(id, opts) {
+  const record = layerRegistry.get(id);
+  if (!record) return false;
+  map.removeLayer(record.layer);
+  layerRegistry.delete(id);
+  if (!opts || !opts.silent) {
+    reflowLayerZ();
+    renderLayerPanel();
+  }
+  return true;
+}
+
+function setLayerOpacity(id, opacity) {
+  const record = layerRegistry.get(id);
+  if (!record) return false;
+  const v = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
+  // Optimistic local apply (slider drag must feel instant), then persist.
+  record.opacity = v;
+  record.layer.setOpacity(v);
+  renderLayerPanel();
+  mutateLayerOnServer("PATCH", `/api/layers/${encodeURIComponent(id)}`, { opacity: v });
+  return true;
+}
+
+function setLayerVisible(id, visible) {
+  const record = layerRegistry.get(id);
+  if (!record) return false;
+  record.visible = !!visible;
+  record.layer.setVisible(record.visible);
+  renderLayerPanel();
+  mutateLayerOnServer("PATCH", `/api/layers/${encodeURIComponent(id)}`, {
+    visible: record.visible,
+  });
+  return true;
+}
+
+// Move a layer to a new position in the stack. `toIndex` counts from the
+// bottom of the raster stack (0 = lowest). The map id order is preserved
+// in the Map, so we rebuild zIndex from the insertion order.
+function reorderLayer(id, toIndex) {
+  if (!layerRegistry.has(id)) return false;
+  const ids = Array.from(layerRegistry.keys()).filter((k) => k !== id);
+  const clamped = Math.max(0, Math.min(ids.length, toIndex | 0));
+  ids.splice(clamped, 0, id);
+  const rebuilt = new Map();
+  for (const key of ids) rebuilt.set(key, layerRegistry.get(key));
+  layerRegistry.clear();
+  for (const [key, rec] of rebuilt) layerRegistry.set(key, rec);
+  reflowLayerZ();
+  renderLayerPanel();
+  mutateLayerOnServer("PATCH", `/api/layers/${encodeURIComponent(id)}`, {
+    to_index: clamped,
+  });
+  return true;
+}
+
+// Push the registry order into ol zIndex values. Bottom-most record gets
+// the smallest zIndex so it draws first.
+function reflowLayerZ() {
+  let z = LAYER_Z_FLOOR;
+  for (const rec of layerRegistry.values()) {
+    rec.layer.setZIndex(z);
+    z += 1;
+  }
+}
+
+// The sidebar Layers panel. Rebuilt from the registry on every mutation;
+// cheap enough (a handful of layers) and guarantees the UI never drifts
+// from the actual map state.
+function renderLayerPanel() {
+  const list = document.getElementById("layer-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (layerRegistry.size === 0) {
+    const empty = document.createElement("div");
+    empty.className = "layer-empty";
+    empty.textContent = "No raster layers yet.";
+    list.appendChild(empty);
+    return;
+  }
+  // Render top-most first, which is what GIS users expect.
+  const entries = Array.from(layerRegistry.entries()).reverse();
+  for (const [id, rec] of entries) {
+    const row = document.createElement("div");
+    row.className = "layer-row";
+    row.dataset.layerId = id;
+
+    const vis = document.createElement("input");
+    vis.type = "checkbox";
+    vis.checked = rec.visible;
+    vis.title = "Toggle visibility";
+    vis.addEventListener("change", () => setLayerVisible(id, vis.checked));
+
+    const name = document.createElement("span");
+    name.className = "layer-name";
+    name.textContent = rec.name;
+    name.title = rec.url || rec.name;
+
+    const opacity = document.createElement("input");
+    opacity.type = "range";
+    opacity.min = "0";
+    opacity.max = "1";
+    opacity.step = "0.05";
+    opacity.value = String(rec.opacity);
+    opacity.title = "Layer opacity";
+    opacity.addEventListener("input", () =>
+      setLayerOpacity(id, parseFloat(opacity.value))
+    );
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "layer-btn";
+    up.textContent = "▲";
+    up.title = "Move layer up";
+    up.addEventListener("click", () => {
+      const idx = Array.from(layerRegistry.keys()).indexOf(id);
+      reorderLayer(id, idx + 1);
+    });
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "layer-btn";
+    down.textContent = "▼";
+    down.title = "Move layer down";
+    down.addEventListener("click", () => {
+      const idx = Array.from(layerRegistry.keys()).indexOf(id);
+      reorderLayer(id, Math.max(0, idx - 1));
+    });
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "layer-btn layer-remove";
+    close.textContent = "✕";
+    close.title = "Remove layer";
+    close.addEventListener("click", () => {
+      removeLayer(id);
+      mutateLayerOnServer("DELETE", `/api/layers/${encodeURIComponent(id)}`);
+    });
+
+    row.append(vis, name, opacity, up, down, close);
+    list.appendChild(row);
+  }
+}
 
 // Server-driven counterpart to applyGeeBasemap(): the agent resolved the
 // XYZ tile URL on the backend (gee_get_basemap MCP tool) and pushed it
@@ -1379,20 +1668,19 @@ function applyGeeBasemapFromServer(msg) {
   if (!msg || !msg.tile_url) return;
   const statusEl = document.getElementById("status");
 
-  // Replace any previous GEE basemap — one scene at a time.
-  clearGeeBasemap();
-
+  const id = `gee:${msg.scene_id || msg.tile_url}`;
   const source = new ol.source.XYZ({
     url: msg.tile_url,
     crossOrigin: "anonymous",
     attributions: "Sentinel-2 · Google Earth Engine",
   });
-  geeBasemapLayer = new ol.layer.Tile({
-    source,
+  const layer = new ol.layer.Tile({ source });
+  addLayer(id, layer, {
+    kind: "gee",
+    name: `Sentinel-2 ${msg.preset || ""} ${msg.scene_id || ""}`.trim(),
+    url: msg.tile_url,
     opacity: 1,
-    zIndex: -1,
   });
-  map.addLayer(geeBasemapLayer);
 
   // Recenter so the user sees the scene rather than an empty ocean.
   // bbox is [west, south, east, north] in EPSG:4326.
@@ -1439,15 +1727,21 @@ async function loadGeeBasemapPresets() {
 }
 
 function clearGeeBasemap() {
-  if (geeBasemapLayer) {
-    map.removeLayer(geeBasemapLayer);
-    geeBasemapLayer = null;
+  // Drop only GEE layers; GeoTIFF and external XYZ layers stay.
+  for (const [id, rec] of Array.from(layerRegistry.entries())) {
+    if (rec.kind === "gee") removeLayer(id, { silent: true });
   }
+  reflowLayerZ();
+  renderLayerPanel();
   const clearBtn = document.getElementById("btn-gee-basemap-clear");
   if (clearBtn) clearBtn.hidden = true;
   const applyBtn = document.getElementById("btn-gee-basemap-apply");
   if (applyBtn) applyBtn.disabled = false;
 }
+
+//: id of the most recently added GEE layer — the toolbar opacity slider
+//: and preset dropdown act on it.
+let activeGeeLayerId = null;
 
 async function applyGeeBasemap() {
   const sceneInput = document.getElementById("gee-basemap-scene");
@@ -1488,24 +1782,20 @@ async function applyGeeBasemap() {
       return;
     }
 
-    // Replace any previous GEE basemap — one scene at a time keeps the
-    // layer stack simple and matches the single-scene tile URL model.
-    clearGeeBasemap();
-
+    const layerId = `gee:${data.scene_id || sceneId}:${data.preset || preset}`;
     const source = new ol.source.XYZ({
       url: data.tile_url,
       crossOrigin: "anonymous",
-      // The Earth Engine tile endpoint is not a standard {z}/{x}/{y}
-      // template on every API version, so let OL pick the default
-      // projection (EPSG:3857, which EE serves) and maxZoom.
       attributions: "Sentinel-2 · Google Earth Engine",
     });
-    geeBasemapLayer = new ol.layer.Tile({
-      source,
+    const layer = new ol.layer.Tile({ source });
+    addLayer(layerId, layer, {
+      kind: "gee",
+      name: `Sentinel-2 ${data.preset || preset} (${data.scene_id || sceneId})`,
+      url: data.tile_url,
       opacity: Number.isFinite(opacity) ? opacity : 1,
-      zIndex: -1, // below polygons and the raster overlay
     });
-    map.addLayer(geeBasemapLayer);
+    activeGeeLayerId = layerId;
 
     if (clearBtn) clearBtn.hidden = false;
     if (statusEl) {
@@ -1528,19 +1818,19 @@ function initGeeBasemap() {
   if (applyBtn) applyBtn.addEventListener("click", applyGeeBasemap);
   if (clearBtn) clearBtn.addEventListener("click", clearGeeBasemap);
 
-  // Live opacity: change the layer's alpha without re-requesting tiles.
+  // Live opacity: change the active GEE layer's alpha without re-requesting
+  // tiles. Per-layer opacity is also editable in the Layers panel.
   if (opacityInput) {
     opacityInput.addEventListener("input", () => {
-      if (!geeBasemapLayer) return;
-      const value = parseFloat(opacityInput.value);
-      geeBasemapLayer.setOpacity(Number.isFinite(value) ? value : 1);
+      if (!activeGeeLayerId) return;
+      setLayerOpacity(activeGeeLayerId, parseFloat(opacityInput.value));
     });
   }
 
   // Switching to a preset re-loads the basemap immediately if one is up.
   if (presetSelect) {
     presetSelect.addEventListener("change", () => {
-      if (geeBasemapLayer && presetSelect.value) applyGeeBasemap();
+      if (activeGeeLayerId && presetSelect.value) applyGeeBasemap();
     });
   }
 

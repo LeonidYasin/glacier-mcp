@@ -78,8 +78,16 @@
           <button type="button" id="btn-gee-basemap-apply" class="btn btn-accent"
                   title="Load the selected Sentinel-2 scene as the map basemap">Load basemap</button>
           <button type="button" id="btn-gee-basemap-clear" class="btn btn-secondary"
-                  title="Remove the GEE basemap" hidden>Clear</button>
+                  title="Remove all GEE basemap layers" hidden>Clear</button>
         </div>
+      </section>
+
+      <section class="side-section">
+        <h2 class="side-title">Layers</h2>
+        <!-- Rendered by renderLayerPanel() from the JS layer registry.
+             Each row: visibility checkbox, name, opacity slider,
+             reorder ▲▼ and remove ✕. -->
+        <div id="layer-list"></div>
       </section>
     </aside>
 
